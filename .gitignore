@@ -1,4 +1,8 @@
-# Byte-compiled / optimized / DLL files
+# project exclusion
+dataset/
+datasets/
+
+#  Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
