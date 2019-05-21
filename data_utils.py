@@ -227,7 +227,6 @@ class BirdsDataset(Dataset):
             self.preprocessor = preprocessor
         self.branch_num = branch_num
         self.tokenizer = tokenizer
-        self.mode = mode
         self.imsize = []
 
         self._load_all_captions()
