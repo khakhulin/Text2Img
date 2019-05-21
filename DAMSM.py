@@ -23,6 +23,11 @@ class TextEncoder(nn.Module):
         self.n_layers = n_layers
         self.bidirectional = bidirectional
         
+        if bidirectional:
+            self.n_directions = 2
+        else:
+            self.n_directions = 1
+        
         self.emb = nn.Embedding(n_tokens, emb_size)
         self.drop = nn.Dropout(0.5)
         self.lstm = nn.LSTM(emb_size, hid_size, n_layers,
@@ -35,20 +40,17 @@ class TextEncoder(nn.Module):
                                  enforce_sorted=False)
 
         #print(h.size())
-        words, _ = self.lstm(h, hidden) # B x T x D
+        words, h = self.lstm(h, hidden) # B x T x D
         words, _ = pad_packed_sequence(words, batch_first=True)
         #print(words.size())
-        sentence = words[:, -1]
+        sent = h[0].transpose(0, 1).contiguous()
         #print(words.size(), sentence.size())
+        sent = sent.view(-1, self.hid_size * self.n_directions)
         
-        return words, sentence
+        return words, sent
 
     def init_hidden(self, batch_size):
-        n_hid = self.n_layers
-
-        if self.bidirectional:
-            n_hid *= 2
-
+        n_hid = self.n_layers * self.n_directions
         h0 = torch.randn(n_hid, batch_size, self.hid_size).to(cfg.DEVICE)
         c0 = torch.randn(n_hid, batch_size, self.hid_size).to(cfg.DEVICE)
         return (h0, c0)
@@ -77,9 +79,8 @@ class ImageEncoder(nn.Module):
     def forward(self, x):
         x, global_feat, _ = self.inception(x)
         # B x 768 x 17 x 17 --> B x 17 x 17 x 768
-        local_feat = x.permute(0, 2, 3, 1)
         # swap channels and sub-regions to apply linear transformation
-        local_feat = self.map_local(local_feat)
+        local_feat = self.map_local(x.permute(0, 2, 3, 1))
         global_feat = self.map_global(global_feat)
         #print(local_feat.size(), global_feat.size())
 
@@ -142,8 +143,8 @@ class DAMSM(nn.Module):
             #    print(p.grad)
             # `clip_grad_norm` helps prevent
             # the exploding gradient problem in RNNs / LSTMs.
-            #torch.nn.utils.clip_grad_norm_(self.text_encoder.parameters(),
-            #                               cfg.DAMSM.RNN_GRAD_CLIP)
+            torch.nn.utils.clip_grad_norm_(self.text_encoder.parameters(),
+                                           cfg.DAMSM.RNN_GRAD_CLIP)
             
             optimizer.step()
 
@@ -262,17 +263,18 @@ if __name__ == '__main__':
     n_tokens = len(preproc.vocabs['idx_to_word'])
     ixtoword = lambda idx: preproc.vocabs['idx_to_word'][idx]
 
-    train_data = BirdsDataset(mode='val', tokenizer=tokenizer, preprocessor=preproc, base_size=299, branch_num=1)
+    train_data = BirdsDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, base_size=299, branch_num=1)
     val_data = BirdsDataset(mode='val', tokenizer=tokenizer, preprocessor=preproc, base_size=299, branch_num=1)
     train_loader = torch.utils.data.DataLoader(dataset=train_data, batch_size=cfg.DAMSM.BATCH_SIZE,
-                                               num_workers=6)
+                                               shuffle=True, num_workers=6)
     val_loader = torch.utils.data.DataLoader(dataset=val_data, batch_size=cfg.DAMSM.BATCH_SIZE,
-                                             num_workers=6)
+                                             shuffle=True, num_workers=6)
     # Create model and optimizer
     text_encoder = TextEncoder(n_tokens, cfg.TEXT.EMBEDDING_DIM)
     image_encoder = ImageEncoder(text_encoder.feat_size())
     damsm = DAMSM(text_encoder, image_encoder).to(cfg.DEVICE)
-    optimizer = torch.optim.Adam(damsm.parameters(), lr=cfg.DAMSM.LR)
+    optimizer = torch.optim.Adam(damsm.parameters(), lr=cfg.DAMSM.LR,
+                                 betas=(0.5, 0.999))
     # Train
     image_dir = 'attn_images'
     save_dir = 'pretrained/DAMSM/%s' % (run_name)
@@ -284,16 +286,16 @@ if __name__ == '__main__':
 
     for epoch in range(cfg.DAMSM.N_EPOCH):
         damsm.train_epoch(epoch, train_loader, optimizer, ixtoword, image_dir)
-        # loss = damsm.evaluate(epoch, val_loader, ixtoword, image_dir)
+        loss = damsm.evaluate(epoch, val_loader, ixtoword, image_dir)
         # # Save best model
-        # if loss < min_loss:
-        #     min_loss = loss
-        #     best_path = os.path.join(save_dir, 'best.pt')
-        #     save(best_path, damsm, optimizer, loss, epoch)
-        # # Save checkpoint
-        # timer += 1
+        if loss < min_loss:
+            min_loss = loss
+            best_path = os.path.join(save_dir, 'best.pt')
+            save(best_path, damsm, optimizer, loss, epoch)
+        # Save checkpoint
+        timer += 1
 
-        # if timer == ckpt_delay:
-        #     timer = 0
-        #     ckpt_path = os.path.join(save_dir, 'weights%03d.pt' % (epoch+1))
-        #     save(ckpt_path, damsm, optimizer, loss, epoch)
+        if timer == ckpt_delay:
+            timer = 0
+            ckpt_path = os.path.join(save_dir, 'weights%03d.pt' % (epoch+1))
+            save(ckpt_path, damsm, optimizer, loss, epoch)
