@@ -6,10 +6,11 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from config import cfg
+from arguments import init_config
 from custom_inception_v3 import custom_inception_v3
 from losses import func_attention, cosine_similarity, sent_loss, words_loss
 from data_utils import BirdsPreprocessor, BirdsDataset, CaptionTokenizer
+from utils import save, load, freeze_model
 
 device = torch.device('cuda') if torch.cuda.is_available() else 'cpu'
 UPDATE_INTERVAL = 4
@@ -51,9 +52,9 @@ class TextEncoder(nn.Module):
 
     def init_hidden(self, batch_size):
         n_hid = self.n_layers * self.n_directions
-        h0 = torch.randn(n_hid, batch_size, self.hid_size).to(cfg.DEVICE)
-        c0 = torch.randn(n_hid, batch_size, self.hid_size).to(cfg.DEVICE)
-        return (h0, c0)
+        h0 = torch.randn(n_hid, batch_size, self.hid_size)
+        c0 = torch.randn(n_hid, batch_size, self.hid_size)
+        return h0, c0
     
     def init_weights(self):
         initrange = 0.1
@@ -99,17 +100,18 @@ class DAMSM(nn.Module):
         self.text_encoder = text_encoder
         self.image_encoder = image_encoder
     
-    def forward(self, imgs, caps, caps_len, hidden):
+    def forward(self, imgs, caps, caps_len, hidden, args):
         # Bx(HxW)xD, BxD
         img_f_w, img_f_s = self.image_encoder(imgs)
         # BxTxD, BxD
         text_f_w, text_f_s = self.text_encoder(caps, caps_len, hidden)
-        s_loss0, s_loss1 = sent_loss(img_f_s, text_f_s)
-        w_loss0, w_loss1, attn_maps = words_loss(img_f_w, text_f_w, caps_len)
+        s_loss0, s_loss1 = sent_loss(img_f_s, text_f_s, args)
+        w_loss0, w_loss1, _ = words_loss(img_f_w, text_f_w, caps_len, args)
 
         return w_loss0, w_loss1, s_loss0, s_loss1
 
-    def train_epoch(self, epoch, dataloader, optimizer, ixtoword, image_dir):
+    def train_epoch(self, epoch, dataloader, optimizer, image_dir,
+                    args, device='cpu'):
         self.train()
         
         s_total_loss0 = 0
@@ -117,16 +119,17 @@ class DAMSM(nn.Module):
         w_total_loss0 = 0
         w_total_loss1 = 0
 
-        for step, data in tqdm(enumerate(dataloader), total=len(dataloader)):
+        for data in tqdm(dataloader, total=len(dataloader)):
 
             imgs, caps, caps_len = data
-            imgs = imgs[-1].to(cfg.DEVICE)
-            caps = caps.to(cfg.DEVICE)
-            caps_len = caps_len.to(cfg.DEVICE)
-
-            hidden = self.text_encoder.init_hidden(imgs.size(0))
+            imgs = imgs[-1].to(device)
+            caps = caps.to(device)
+            caps_len = caps_len.to(device)
+            # Initialize hidden state for LSTM
+            h0, c0 = self.text_encoder.init_hidden(imgs.size(0))
+            h0, c0 = h0.to(device), c0.to(device)
             w_loss0, w_loss1, s_loss0, s_loss1 = \
-                self.forward(imgs, caps, caps_len, hidden)
+                self.forward(imgs, caps, caps_len, (h0, c0), args)
             loss = s_loss0 + s_loss1 + w_loss0 + w_loss1
 
             w_total_loss0 += w_loss0.item()
@@ -138,26 +141,11 @@ class DAMSM(nn.Module):
             self.image_encoder.zero_grad()
 
             loss.backward()
-
-            #for p in self.text_encoder.parameters():
-            #    print(p.grad)
             # `clip_grad_norm` helps prevent
             # the exploding gradient problem in RNNs / LSTMs.
             torch.nn.utils.clip_grad_norm_(self.text_encoder.parameters(),
-                                           cfg.DAMSM.RNN_GRAD_CLIP)
-            
+                                           args.damsm_rnn_grad_clip)
             optimizer.step()
-
-            if step % UPDATE_INTERVAL == 0:
-                pass
-                # attention Maps
-                #img_set, _ = \
-                #    build_super_images(imgs.cpu(), captions,
-                #                    ixtoword, attn_maps, att_sze)
-                #if img_set is not None:
-                #    im = Image.fromarray(img_set)
-                #    fullpath = '%s/attention_maps%d.png' % (image_dir, step)
-                #    im.save(fullpath)
 
         s_total_loss0 /= len(dataloader)
         s_total_loss1 /= len(dataloader)
@@ -175,7 +163,7 @@ class DAMSM(nn.Module):
 
         return
     
-    def evaluate(self, epoch, loader, ixtoword, image_dir):
+    def evaluate(self, epoch, loader, image_dir, args, device='cpu'):
         self.eval()
         
         s_total_loss0 = 0
@@ -184,33 +172,23 @@ class DAMSM(nn.Module):
         w_total_loss1 = 0
 
         with torch.no_grad():
-            for step, data in tqdm(enumerate(loader), total=len(loader)):
+            for data in tqdm(loader, total=len(loader)):
 
                 imgs, caps, caps_len = data
-                imgs = imgs[-1].to(cfg.DEVICE)
-                caps = caps.to(cfg.DEVICE)
-                caps_len = caps_len.to(cfg.DEVICE)
+                imgs = imgs[-1].to(device)
+                caps = caps.to(device)
+                caps_len = caps_len.to(device)
 
-                hidden = self.text_encoder.init_hidden(imgs.size(0))
+                h0, c0 = self.text_encoder.init_hidden(imgs.size(0))
+                h0, c0 = h0.to(device), c0.to(device)
                 w_loss0, w_loss1, s_loss0, s_loss1 = \
-                    self.forward(imgs, caps, caps_len, hidden)
+                    self.forward(imgs, caps, caps_len, (h0, c0), args)
                 # loss = w_loss0 + w_loss1 + s_loss0 + s_loss1
 
                 w_total_loss0 += w_loss0.item()
                 w_total_loss1 += w_loss1.item()
                 s_total_loss0 += s_loss0.item()
                 s_total_loss1 += s_loss1.item()
-
-                if step % UPDATE_INTERVAL == 0:
-                    pass
-                    # attention Maps
-                    #img_set, _ = \
-                    #    build_super_images(imgs.cpu(), captions,
-                    #                    ixtoword, attn_maps, att_sze)
-                    #if img_set is not None:
-                    #    im = Image.fromarray(img_set)
-                    #    fullpath = '%s/attention_maps%d.png' % (image_dir, step)
-                    #    im.save(fullpath)
 
         s_cur_loss0 = s_total_loss0 / len(loader)
         s_cur_loss1 = s_total_loss1 / len(loader)
@@ -225,68 +203,67 @@ class DAMSM(nn.Module):
                              w_cur_loss0, w_cur_loss1, sum_loss))
 
         return sum_loss
-    
-def save(path, model, optimizer, loss, epoch):
-    checkpoint = {
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'epoch': epoch,
-        'loss': loss
-    }
-    torch.save(checkpoint, path)
-    
-def load(path):
-    checkpoint = torch.load(path)
-    model_weights = checkpoint['model']
-    opt_state = checkpoint['optimizer']
-    epoch = checkpoint['epoch']
-    loss = checkpoint['loss']
-
-    return model_weights, opt_state, epoch, loss
-
-def freeze_model(model):
-    model.eval()
-    for params in model.parameters():
-        params.requires_grad = False
-        
-def unfreeze_model(model):
-    model.train()
-    for params in model.parameters():
-        params.requires_grad = True
 
 if __name__ == '__main__':
+    args = init_config()
     run_name = datetime.datetime.now().strftime('%Y:%m:%d:%H:%M:%S')
     # Load data (Birds)
-    preproc = BirdsPreprocessor(data_path='datasets/CUB_200_2011', dataset_name='cub')
+    preproc = BirdsPreprocessor(data_path='datasets/CUB_200_2011',
+        dataset_name='cub'
+    )
     tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
 
     n_tokens = len(preproc.vocabs['idx_to_word'])
-    ixtoword = lambda idx: preproc.vocabs['idx_to_word'][idx]
 
-    train_data = BirdsDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, base_size=299, branch_num=1)
-    val_data = BirdsDataset(mode='val', tokenizer=tokenizer, preprocessor=preproc, base_size=299, branch_num=1)
-    train_loader = torch.utils.data.DataLoader(dataset=train_data, batch_size=cfg.DAMSM.BATCH_SIZE,
-                                               shuffle=True, num_workers=6)
-    val_loader = torch.utils.data.DataLoader(dataset=val_data, batch_size=cfg.DAMSM.BATCH_SIZE,
-                                             shuffle=True, num_workers=6)
+    train_data = BirdsDataset(mode='train', tokenizer=tokenizer,
+        preprocessor=preproc, base_size=299, branch_num=1
+    )
+    val_data = BirdsDataset(mode='val', tokenizer=tokenizer,
+        preprocessor=preproc, base_size=299, branch_num=1
+    )
+    train_loader = torch.utils.data.DataLoader(
+        dataset=train_data,
+        batch_size=args.damsm_batch_size,
+        shuffle=True, num_workers=6
+    )
+    val_loader = torch.utils.data.DataLoader(
+        dataset=val_data,
+        batch_size=args.damsm_batch_size,
+        shuffle=True, num_workers=6
+    )
+    # CUDA
+    if args.cuda and torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = 'cpu'
     # Create model and optimizer
-    text_encoder = TextEncoder(n_tokens, cfg.TEXT.EMBEDDING_DIM)
+    text_encoder = TextEncoder(n_tokens, args.embd_size)
     image_encoder = ImageEncoder(text_encoder.feat_size())
-    damsm = DAMSM(text_encoder, image_encoder).to(cfg.DEVICE)
-    optimizer = torch.optim.Adam(damsm.parameters(), lr=cfg.DAMSM.LR,
-                                 betas=(0.5, 0.999))
+    damsm = DAMSM(text_encoder, image_encoder).to(device)
+    optimizer = torch.optim.Adam(damsm.parameters(),
+        lr=args.damsm_lr, betas=(0.5, 0.999)
+    )    
     # Train
     image_dir = 'attn_images'
-    save_dir = 'pretrained/DAMSM/%s' % (run_name)
+    save_dir = os.path.join('pretrained/DAMSM', run_name)
     os.makedirs(save_dir, exist_ok=True)
 
     min_loss = np.inf
-    ckpt_delay = cfg.DAMSM.SNAPSHOT_INTERVAL
     timer = 0
-
-    for epoch in range(cfg.DAMSM.N_EPOCH):
-        damsm.train_epoch(epoch, train_loader, optimizer, ixtoword, image_dir)
-        loss = damsm.evaluate(epoch, val_loader, ixtoword, image_dir)
+    start_epoch = 0
+    # Continue training
+    if len(args.damsm_start_from):
+        weights, opt, loss, epoch = load(args.damsm_start_from)
+        damsm.load_state_dict(weights)
+        optimizer.load_state_dict(opt)
+        min_loss = loss
+        start_epoch = int(epoch) + 1
+    # Main loop
+    for epoch in range(start_epoch, start_epoch + args.damsm_n_epoch):
+        damsm.train_epoch(epoch, train_loader, optimizer, image_dir,
+            args, device
+        )
+        loss = damsm.evaluate(epoch, val_loader, image_dir, args, device)
         # # Save best model
         if loss < min_loss:
             min_loss = loss
@@ -295,7 +272,7 @@ if __name__ == '__main__':
         # Save checkpoint
         timer += 1
 
-        if timer == ckpt_delay:
+        if timer == args.damsm_snapshot_interval:
             timer = 0
             ckpt_path = os.path.join(save_dir, 'weights%03d.pt' % (epoch+1))
             save(ckpt_path, damsm, optimizer, loss, epoch)
