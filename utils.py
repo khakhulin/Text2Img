@@ -1,4 +1,20 @@
 import torch
+import torch.nn as nn
+
+from nn_utils import LeakyConv
+
+
+class Downsample16(nn.Sequential):
+    def __init__(self, num_out):
+        super().__init__(nn.Sequential(
+        nn.Conv2d(3, num_out, 4, 2, 1, bias=False),
+        nn.LeakyReLU(0.2, inplace=True),
+        LeakyConv(num_out, num_out * 2, 4, 2, 1),
+        LeakyConv(num_out * 2, num_out * 4, 4, 2, 1),
+        LeakyConv(num_out * 4, num_out * 8, 4, 2, 1)
+        )
+    )
+
 
 def save(path, model, optimizer, loss, epoch):
     checkpoint = {
@@ -27,3 +43,4 @@ def unfreeze_model(model):
     model.train()
     for params in model.parameters():
         params.requires_grad = True
+
