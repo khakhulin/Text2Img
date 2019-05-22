@@ -1,6 +1,5 @@
 import argparse
 
-
 def init_config():
     parser = argparse.ArgumentParser()
 
@@ -35,7 +34,19 @@ def init_config():
     #  Model
     parser.add_argument('--embd_size', default=64, type=int, help='size of embedding vectors in gcn')
     parser.add_argument('--encoder_type', default='lstm', type=str, help='type of the text encoder')
+    # DAMSM
+    parser.add_argument('--gamma1', default=4.0, type=float, help='')
+    parser.add_argument('--gamma2', default=5.0, type=float, help='')
+    parser.add_argument('--gamma3', default=10.0, type=float, help='')
+    parser.add_argument('--damsm_batch_size', default=50, type=int, help='')
+    parser.add_argument('--damsm_lr', default=2e-4, type=float, help='')
+    parser.add_argument('--damsm_snapshot_interval', default=10, type=int, help='')
+    parser.add_argument('--damsm_n_epoch', default=600, type=int, help='')
+    parser.add_argument('--damsm_rnn_grad_clip', default=0.25, type=float, help='')
+    parser.add_argument('--damsm_start_from', default='', type=str, help='')
 
     args = parser.parse_args()
 
     return args
+
+args = init_config()
