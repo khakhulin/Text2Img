@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 
@@ -24,7 +25,8 @@ def save(path, model, optimizer, loss, epoch):
         'loss': loss
     }
     torch.save(checkpoint, path)
-    
+
+
 def load(path):
     checkpoint = torch.load(path)
     model_weights = checkpoint['model']
@@ -34,13 +36,33 @@ def load(path):
 
     return model_weights, opt_state, epoch, loss
 
+
 def freeze_model(model):
     model.eval()
     for params in model.parameters():
         params.requires_grad = False
-        
+
+
 def unfreeze_model(model):
     model.train()
     for params in model.parameters():
         params.requires_grad = True
 
+
+def initi_weight(model_layer, gain=1.0, sigma=0.02): # TODO add initialization with different properties
+    #  according to authors code
+    classname = model_layer.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.orthogonal_(model_layer.weight.data, gain=gain)
+    elif classname.find('BatchNorm') != -1:
+        model_layer.weight.data.normal_(1.0, sigma)
+        model_layer.bias.data.fill_(0)
+    elif classname.find('Linear') != -1:
+        nn.init.orthogonal_(model_layer.weight.data, 1.0)
+        if model_layer.bias is not None:
+            model_layer.bias.data.fill_(0.0)
+
+
+def make_dir(file_path):
+    if not os.path.exists(file_path):
+        os.makedirs(file_path)
