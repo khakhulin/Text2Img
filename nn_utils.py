@@ -28,17 +28,15 @@ class Interpolate(nn.Module):
         x = F.interpolate(x, scale_factor=self.scale_factor, mode=self.mode, size=self.size)
         return x
 
-
-def upBlock(in_planes, out_planes):
-
-    block = nn.Sequential(
+class UpBlock(nn.Sequential):
+    def __init__(self, in_planes, out_planes):
+        super().__init__(nn.Sequential(
         Interpolate(scale_factor=2, mode='nearest'),
         conv3x3(in_planes, out_planes * 2),
         nn.BatchNorm2d(out_planes * 2),
-        nn.GLU())
-
-    return block
-
+        nn.GLU()
+        )
+        )
 
 # Keep the spatial size
 
