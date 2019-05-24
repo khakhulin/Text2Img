@@ -5,6 +5,7 @@ from torchvision.models.inception import Inception3
 from torch.utils.model_zoo import load_url
 from warnings import warn
 
+
 class CustomInception3(Inception3):
     """ Like torchvision.models.inception.Inception3 but the head goes separately """
     
@@ -46,7 +47,7 @@ class CustomInception3(Inception3):
     
 
 def custom_inception_v3(transform_input=True):
-    model= CustomInception3(transform_input=transform_input)
+    model = CustomInception3(transform_input=transform_input)
     inception_url = 'https://download.pytorch.org/models/inception_v3_google-1a9a5a14.pth'
     model.load_state_dict(load_url(inception_url))
     return model

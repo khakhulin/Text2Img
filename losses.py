@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+
 def func_attention(query, context, gamma1):
     """
     query: B x T x D
@@ -27,6 +28,7 @@ def func_attention(query, context, gamma1):
     weightedContext = torch.bmm(context.transpose(1, 2), attn)
 
     return weightedContext, attn.view(B, H, W, -1)
+
 
 # ##################Loss for matching text-image###################
 def cosine_similarity(x1, x2, dim=1, eps=1e-8):

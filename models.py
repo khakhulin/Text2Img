@@ -250,6 +250,7 @@ class Discriminator256(Discriminator128):
         x_code4 = self.image_code(x_var)
         return x_code4
 
+
 if __name__ == '__main__':
     print(Discriminator256(10, 64).cond_discriminator)
     ngf, nef, ncf, branch_num = 32, 256, 100, 3
