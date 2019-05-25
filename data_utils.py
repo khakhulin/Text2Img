@@ -12,6 +12,11 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 
+try:
+    from pytorch_pretrained_bert import BertTokenizer
+except ImportError:
+    pass
+
 from nltk.tokenize import RegexpTokenizer
 
 MAX_SEQ_LEN = 30
@@ -182,6 +187,46 @@ class CaptionTokenizer(BaseTokenizer):
                           filter(lambda x: len(x) > 0 and x in self.word_to_idx,
                                  tokenizer.tokenize(cap.lower()))))
         return tokens
+
+
+class BertCaptionTokenizer(BaseTokenizer):
+    def __init__(self, word_to_idx, max_caption_size=MAX_SEQ_LEN):
+        super().__init__(max_caption_size)
+        self.word_to_idx = word_to_idx
+        self.max_caption_size = max_caption_size
+
+        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+        print("[Bert Tokenizer from pretrained model]")
+
+    def tokenize(self, caption):
+        unpadded = self.tokenizer.tokenize(caption)
+        tokens = self.tokenizer.convert_tokens_to_ids(unpadded)
+        return tokens
+
+
+def prepare_data(data, device, class_ids=None, is_damsm=False):
+    imgs, captions, caption_lengths = data
+
+    real_imgs = []
+    if not is_damsm:
+        for i in range(len(imgs)):
+            real_imgs.append(imgs[i].to(device))
+    else:
+        real_imgs = imgs[-1].to(device)
+    max_len = MAX_SEQ_LEN
+    # captions = captions[:, :max_len]
+    captions = captions.squeeze()
+    captions = captions.to(device)
+    if class_ids:
+        class_ids = class_ids.numpy()
+
+    caption_lengths = caption_lengths.numpy()
+    mask = caption_lengths[:,None] > np.arange(max_len)
+    input_mask = np.zeros(mask.shape)
+    input_mask[mask] = 1
+    input_mask = torch.from_numpy(input_mask).squeeze().to(device)
+
+    return (real_imgs, captions, caption_lengths, input_mask)
 
 
 def get_imgs(img_path, imsize, branch_num, transform=None):
