@@ -96,7 +96,7 @@ class Text2ImgTrainer:
     def build_dataset(path_to_data):
         preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
         tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
-        dataset = BirdsDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=2)
+        dataset = BirdsDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
         image, _, _ = dataset[0]
         assert image[0].size() == torch.Size([3, 64, 64])
         return dataset
@@ -227,6 +227,6 @@ if __name__ == '__main__':
     run_name = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     trainer = Text2ImgTrainer(
         data_path='dataset/CUB_200_2011', batch_size=2,
-        continue_from='trained_models/26:05:2019:00-28-38/weights002.pt',
+        #continue_from='trained_models/26:05:2019:00-28-38/weights002.pt',
         device=torch.device('cuda'), args=args)
     trainer.train(run_name, epochs=10)
