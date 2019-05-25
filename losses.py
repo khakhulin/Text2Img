@@ -175,10 +175,10 @@ def discriminator_loss(netD, real_imgs, fake_imgs, conditions,
 def generator_loss(netsD, image_encoder,
                    fake_images, real_labels,
                    words_embeddings, sentence_embedding,
-                    cap_lens, args):
+                   cap_lens, args):
     numDs = len(netsD)
     batch_size = real_labels.size(0)
-    logs = ''
+    g_losses = []
     # Forward
     errG_total = 0
     for i in range(numDs):
@@ -193,7 +193,7 @@ def generator_loss(netsD, image_encoder,
             g_loss = cond_errG
         errG_total += g_loss
         # err_img = errG_total.data[0]
-        logs += 'generator loss {0}: {1:.5f} '.format(i, g_loss.item())
+        g_losses.append(g_loss.item())
 
         # Ranking loss
         if i == (numDs - 1):
@@ -209,8 +209,7 @@ def generator_loss(netsD, image_encoder,
             s_loss = (s_loss0 + s_loss1) * args.smooth_lambda
 
             errG_total += w_loss + s_loss
-            logs += 'w_loss: {0:.2f} s_loss: {1:.2f} ' .format(w_loss.item(), s_loss.item())
-    return errG_total, logs
+    return errG_total, g_losses, w_loss.item(), s_loss.item()
 
 
 ##################################################################
