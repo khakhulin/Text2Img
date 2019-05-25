@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 
 
 from arguments import init_config
-from data_utils import BirdsPreprocessor, CaptionTokenizer, BirdsDataset
+from data_utils import BirdsPreprocessor, CaptionTokenizer, BirdsDataset, prepare_data
 from losses import discriminator_loss, generator_loss, KL_loss
 import os
 import time
@@ -24,6 +24,7 @@ class Text2ImgTrainer:
         self.dataset = self.build_dataset(data_path)
         self.data_loader = DataLoader(dataset=self.dataset, batch_size=self.batch_size)
         self.path_to_data = data_path
+        self.is_bert = self.args.is_bert
         self.model = self.build_model(
             embedding_dim=256,
             n_tokens=self.dataset.n_tokens,
@@ -35,6 +36,7 @@ class Text2ImgTrainer:
             num_discriminator_filters=64,
             z_dim=100,
             condition_dim=128,
+            is_bert_encoder=self.is_bert,
             device=self.device
         )
 
@@ -47,30 +49,9 @@ class Text2ImgTrainer:
 
         self.avg_snapshot_generator = copy_params(self.model.generator)
 
-        # self.batch_size = cfg.TRAIN.BATCH_SIZE
-        # self.max_epoch = cfg.TRAIN.MAX_EPOCH
-        # self.snapshot_interval = cfg.TRAIN.SNAPSHOT_INTERVAL
-        #
-        # self.n_words = n_words
-        # self.ixtoword = ixtoword
-        # self.data_loader = data_loader
-        # self.num_batches = len(self.data_loader)
-
     @staticmethod
     def build_model(**kwargs):
         return Text2ImgModel(**kwargs)
-
-    @staticmethod
-    def build_data_loader(batch_size):
-        preproc = BirdsPreprocessor(data_path='datasets/CUB_200_2011', dataset_name='cub')
-        assert len(preproc.train) == 9813
-        assert len(preproc.test) == 1179
-        tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
-        dataset = BirdsDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=2)
-        image, caption, length = dataset[0]
-        assert image[0].size() == torch.Size([3, 64, 64])
-        data_loader = torch.utils.data.DataLoader(dataset=dataset, batch_size=batch_size)
-        return data_loader
 
     @staticmethod
     def build_dataset(path_to_data):
@@ -125,15 +106,15 @@ class Text2ImgTrainer:
             for data in self.data_loader:
                 set_requires_grad_value(self.model.discriminators, True)
 
-                images, captions, cap_lens = data
+                images, captions, cap_lens, masks = prepare_data(data, self.device)
 
                 noise.normal_(0, 1)
                 fake_images, mu, logvar, sentence_embedding, words_embeddings = \
                     self.model(
-                        images,
-                        captions.to(self.device),
-                        cap_lens.to(self.device),
-                        noise
+                        captions,
+                        cap_lens,
+                        noise,
+                        masks
                     )
 
                 errD_total = 0
@@ -178,6 +159,7 @@ class Text2ImgTrainer:
                 # if gen_iterations % 100 == 0:
                 print(D_logs + '\n' + G_logs)
                 # save images
+                exit()
                 if gen_iterations % 1000 == 0:
                     load_params(self.model.generator, self.avg_snapshot_generator)
                     #  TODO validation
@@ -188,5 +170,5 @@ class Text2ImgTrainer:
 if __name__ == '__main__':
     assert torch.__version__== '1.1.0'
     args = init_config()
-    trainer = Text2ImgTrainer(data_path='dataset/CUB_200_2011', batch_size=2, device=torch.device('cpu'),args=args)
+    trainer = Text2ImgTrainer(data_path='datasets/CUB_200_2011', batch_size=2, device=torch.device('cpu'),args=args)
     trainer.train(epochs=10)

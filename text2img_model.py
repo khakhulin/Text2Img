@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from DAMSM import ImageEncoder, TextEncoder
+from DAMSM import ImageEncoder, TextEncoder, BertEncoder
 from models import (
     Discriminator64,
     Discriminator128,
@@ -23,12 +23,13 @@ class Text2ImgModel(nn.Module):
             num_discriminator_filters,
             z_dim,
             condition_dim,
+            is_bert_encoder,
             device
     ):
         super(Text2ImgModel, self).__init__()
 
         self.z_dim = z_dim
-
+        self.is_bert_encoder = is_bert_encoder
         self.image_encoder = ImageEncoder(multimodal_feat_size=embedding_dim).to(device)
 
         if pretrained_image_encoder_path != '':
@@ -45,9 +46,11 @@ class Text2ImgModel(nn.Module):
             p.requires_grad = False
 
         self.image_encoder.eval()
+        if self.is_bert_encoder:
+            self.text_encoder = BertEncoder(emb_size=embedding_dim).to(device)
+        else:
+            self.text_encoder = TextEncoder(n_tokens=n_tokens, emb_size=embedding_dim).to(device)
 
-        self.text_encoder = \
-            TextEncoder(n_tokens=n_tokens, emb_size=embedding_dim).to(device)
         if pretrained_text_encoder_path != '':
             state_dict = \
                 torch.load(pretrained_text_encoder_path,
@@ -100,10 +103,12 @@ class Text2ImgModel(nn.Module):
             self.generator.load_state_dict(state_dict)
             print('Load generator from: ', pretrained_generator_path)
 
-    def forward(self, images, captions, cap_lens, noise):
+    def forward(self, captions, cap_lens, noise, masks):
         batch_size = captions.shape[0]
-        hidden = self.text_encoder.init_hidden(batch_size)
-
+        if not self.is_bert_encoder:
+            hidden = self.text_encoder.init_hidden(batch_size)
+        else:
+            hidden = masks
         words_embeddings, sentence_embedding = \
             self.text_encoder(captions, cap_lens, hidden)
         mask = (captions == 0)

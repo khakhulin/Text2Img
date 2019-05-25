@@ -70,14 +70,14 @@ class TextEncoder(nn.Module):
 
 class BertEncoder(nn.Module):
 
-    def __init__(self, embd_size=128,
+    def __init__(self, emb_size=128,
                  n_layers=1):
         super(BertEncoder, self).__init__()
-        self.hid_size = embd_size
+        self.hid_size = emb_size
         self.n_layers = n_layers
         self.inp_ch = 30
         # hidden size per each encoding vector
-        self.enc_size = embd_size
+        self.enc_size = emb_size
         self.bert = BertModel.from_pretrained('bert-base-uncased')
 
         for param in self.bert.parameters():
@@ -292,7 +292,7 @@ if __name__ == '__main__':
     # Create model and optimizer
     print("Embdding dim", args.embd_size)
     if is_bert:
-        text_encoder = BertEncoder(embd_size=2*args.hidden_size)
+        text_encoder = BertEncoder(emb_size=2*args.hidden_size)
     else:
         text_encoder = TextEncoder(n_tokens=n_tokens, emb_size=args.embd_size, hid_size=args.hidden_size)
     image_encoder = ImageEncoder(text_encoder.feat_size())
