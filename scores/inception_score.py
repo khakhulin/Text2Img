@@ -4,25 +4,66 @@ from torch import nn
 from torch.autograd import Variable
 from torch.nn import functional as F
 import torch.utils.data
+import argparse
 
 from torchvision.models.inception import inception_v3
 
 from scipy.stats import entropy
 from tqdm import tqdm
+import os
+from PIL import Image
+from torchvision import transforms
 
 
-class ImageList(torch.utils.data.Dataset):
-    def __init__(self, img_list):
-        self.img_list = img_list
+def collate(batch):
+	elem_type = type(batch[0])
+	if isinstance(batch[0], torch.Tensor):
+		out = None
+		numel = sum([x.numel() for x in batch])
+		storage = batch[0].storage()._new_shared(numel)
+		out = batch[0].new(storage)
+		return torch.stack(batch, 0, out=out)
 
-    def __getitem__(self, index):
-        return self.img_list[index]
+class ImageDataset(torch.utils.data.Dataset):
+	def __init__(self, path_to_imgs):
+		self.path_to_imgs = path_to_imgs
 
-    def __len__(self):
-        return len(self.img_list)
+		self.img_path_list = []
+		for img_dir in os.listdir(self.path_to_imgs):
+			cur_subdir = os.path.join(self.path_to_imgs, img_dir)
+			if (os.path.isdir(cur_subdir)):
+				for img in os.listdir(cur_subdir):
+					if img.endswith(".jpg"):
+						self.img_path_list.append(os.path.join(cur_subdir, img))
+
+		self.preprocess()
+
+	#NOTE: Do preprocessing to remove 1xHxW (1 channel) images
+	def preprocess(self):
+		idx = 0
+		print ("preprocessing ...")
+		for img_path in tqdm(self.img_path_list):
+			img = Image.open(img_path)
+			img = transforms.ToTensor()(img)
+			if (img.size(0) != 3):
+				del self.img_path_list[idx]
+			idx += 1
+
+		self.ds_len = len(self.img_path_list)
+
+	def __getitem__(self, index):
+		img = Image.open(self.img_path_list[index])
+		img = transforms.Resize((299, 299))(img)
+		img = transforms.ToTensor()(img)
+		img = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))(img)
+		return img
+
+	def __len__(self):
+		return self.ds_len
+
 
 # https://github.com/sbarratt/inception-score-pytorch
-def inception_score(imgs, cuda = False, batch_size=32, resize=False, splits=1):
+def inception_score(imgs, cuda = False, batch_size=32, resize=False, splits=10):
 	
 	N = len(imgs)
 
@@ -34,7 +75,7 @@ def inception_score(imgs, cuda = False, batch_size=32, resize=False, splits=1):
 	else:
 		dtype = torch.FloatTensor
 
-	dataloader = torch.utils.data.DataLoader(imgs, batch_size=batch_size)
+	dataloader = torch.utils.data.DataLoader(imgs, batch_size=batch_size, collate_fn=collate)
 
 	inception_model = inception_v3(pretrained=True, transform_input=False).type(dtype)
 	inception_model.eval();
@@ -74,8 +115,23 @@ def inception_score(imgs, cuda = False, batch_size=32, resize=False, splits=1):
 
 	return np.mean(split_scores), np.std(split_scores)
 
-#CIFAR Example 
 
+if __name__ == '__main__':
+
+	parser = argparse.ArgumentParser(description='Process some integers.')
+	parser.add_argument('--dataset_path', default='', type=str)
+	args = parser.parse_args()
+
+	img_dataset = ImageDataset(args.dataset_path)
+
+	print ("Bird dataset len: ", img_dataset.__len__())
+
+	print ("Calculating Inception Score...")
+	print (inception_score(img_dataset, cuda=False, batch_size=32, resize=True, splits=10))
+
+
+#CIFAR Example
+'''
 if __name__ == '__main__':
     class IgnoreLabelDataset(torch.utils.data.Dataset):
         def __init__(self, orig):
@@ -103,3 +159,4 @@ if __name__ == '__main__':
 
     print ("Calculating Inception Score...")
     print (inception_score(IgnoreLabelDataset(cifar), cuda=False, batch_size=32, resize=True, splits=1))
+'''
