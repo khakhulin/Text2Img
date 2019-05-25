@@ -10,8 +10,11 @@ class ResBlock(nn.Module):
             conv3x3(channel_num, channel_num * 2),
             nn.BatchNorm2d(channel_num * 2),
             nn.GLU(),
+            ReViewLastDim(),
             conv3x3(channel_num, channel_num),
-            nn.BatchNorm2d(channel_num))
+            nn.BatchNorm2d(channel_num),
+            )
+
 
     def forward(self, x):
         residual = x
@@ -54,6 +57,31 @@ class Discriminator(nn.Module):
         output = self.logits(h_c_code)
         return output.view(-1)
 
+class CA_NET(nn.Module):
+    # some code is modified from vae examples
+    # (https://github.com/pytorch/examples/blob/master/vae/main.py)
+    def __init__(self, embd, ncf):
+        super(CA_NET, self).__init__()
+        self.t_dim = embd
+        self.c_dim = ncf
+        self.fc = nn.Linear(self.t_dim, self.c_dim * 4, bias=True)
+        self.relu = nn.GLU()
+
+    def encode(self, text_embedding):
+        x = self.relu(self.fc(text_embedding))
+        mu = x[:, :self.c_dim]
+        logvar = x[:, self.c_dim:]
+        return mu, logvar
+
+    def reparametrize(self, mu, logvar):
+        std = logvar.mul(0.5).exp_()
+        eps = torch.FloatTensor(std.size()).normal_()
+        return eps.mul(std).add_(mu)
+
+    def forward(self, text_embedding):
+        mu, logvar = self.encode(text_embedding)
+        c_code = self.reparametrize(mu, logvar)
+        return c_code, mu, logvar
 
 class ConditionNoise(nn.Module):
     def __init__(self, embd_dim, condition_dim, device):
@@ -61,13 +89,13 @@ class ConditionNoise(nn.Module):
         self.t_dim = embd_dim
         self.c_dim = condition_dim
         self.device = device
-        self.fc = nn.Linear(self.t_dim, self.c_dim * 4, bias=True)
+        self.fc = nn.Linear(self.t_dim, self.c_dim * 2, bias=True)
         self.relu = nn.ReLU()
 
     def encode(self, text_embedding):
         x = self.relu(self.fc(text_embedding))
-        mu = x[:, :self.c_dim * 2]
-        logvar = x[:, self.c_dim * 2:]
+        mu = x[:, :self.c_dim]
+        logvar = x[:, self.c_dim:]
         return mu, logvar
 
     def reparametrize(self, mu, logvar):
@@ -85,11 +113,10 @@ class ConditionNoise(nn.Module):
 
 
 class UpGenMode(nn.Module):
-    def __init__(self, ngf, z_dim, text_embd_dim):
+    def __init__(self, ngf, z_dim, ncf):
         super(UpGenMode, self).__init__()
         self.gf_dim = ngf
-        self.in_dim = z_dim + text_embd_dim
-
+        self.in_dim = z_dim + ncf
         nz, ngf = self.in_dim, self.gf_dim
         self.fc = nn.Sequential(
             nn.Linear(nz, ngf * 4 * 4 * 2, bias=False),
@@ -110,12 +137,9 @@ class UpGenMode(nn.Module):
         :return: batch x ngf/16 x 64 x 64
         """
         #  ngf x 4 x 4 ->
-        #  ngf/3 x 8 x 8 -> ngf/16 x 64 x 64
         c_z_code = torch.cat((c_code, z_code), 1)
-        # state size
         out_code = self.fc(c_z_code)
         out_code = out_code.view(-1, self.gf_dim, 4, 4)
-        # state size ngf/3 x 8 x 8
         out_code = self.upsample(out_code)
         return out_code
 
@@ -135,41 +159,40 @@ class ImageGenMod(nn.Module):
 
 
 class AttentionGenerator(nn.Module):
-    def __init__(self, ngf, nef, text_embd_dim, num_res_block):
+    def __init__(self, ngf, nef, cond_dim, num_res_block):
         super(AttentionGenerator, self).__init__()
         self.gf_dim = ngf
         self.encoder_dim = nef
-        self.cf_dim = text_embd_dim
+        self.cf_dim = cond_dim
         self.num_residual = num_res_block
-        layers = nn.ModuleList()
-        self.res_layers = [layers.append(ResBlock(ngf * 2)) for _ in range(self.num_residual)]
+        layers = [ResBlock(ngf * 2) for _ in range(self.num_residual)]
+        self.res_net = nn.Sequential(*layers)
         self.att = GlobalAttentionGeneral(ngf, self.encoder_dim)
         self.upsample = UpBlock(ngf * 2, ngf)
 
     def forward(self, h_code, c_code, word_embs, mask):
         self.att.applyMask(mask)
-        c_code, att = self.att(h_code, word_embs)
+        c_code, att = self.att(h_code, word_embs.permute(0,2,1))
         h_c_code = torch.cat((h_code, c_code), 1)
-        out_code = self.residual(h_c_code)
+        out_code = self.res_net(h_c_code)
         # state size ngf/2 x 2in_size x 2in_size
         out_code = self.upsample(out_code)
-
         return out_code, att
 
 
 class Generator(nn.Module):
-    def __init__(self, ngf, emb_dim, ncf, branch_num, device, z_dim, num_res_block=10):
+    def __init__(self, ngf, emb_dim, ncf, branch_num, device, z_dim, num_res_block=2):
         super(Generator, self).__init__()
         self.ca_net = ConditionNoise(emb_dim, ncf, device)
         self.branch_num = branch_num
         if branch_num > 0:
-            self.h_net1 = UpGenMode(ngf=ngf * 16, z_dim=z_dim, text_embd_dim=emb_dim)
+            self.h_net1 = UpGenMode(ngf=ngf * 16, z_dim=z_dim, ncf=ncf)
             self.img_net1 = ImageGenMod(ngf)
         if branch_num > 1:
-            self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, text_embd_dim=ncf, num_res_block=num_res_block)
+            self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
             self.img_net2 = ImageGenMod(ngf=ngf)
         if branch_num > 2:
-            self.h_net3 = AttentionGenerator(ngf=ngf, nef=emb_dim, text_embd_dim=ncf, num_res_block=num_res_block)
+            self.h_net3 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
             self.img_net3 = ImageGenMod(ngf=ngf)
 
     def forward(self, z_code, sent_emb, word_embs, mask):
@@ -183,14 +206,14 @@ class Generator(nn.Module):
         fake_imgs = []
         att_maps = []
         c_code, mu, logvar = self.ca_net(sent_emb)
-
         if self.branch_num > 0:
             h_code1 = self.h_net1(z_code, c_code)
             fake_img1 = self.img_net1(h_code1)
             fake_imgs.append(fake_img1)
         if self.branch_num > 1:
-            h_code2, att1 = \
-                self.h_net2(h_code1, c_code, word_embs, mask)
+            #TODO add mask?
+            h_code2, att1 = self.h_net2(h_code1, c_code, word_embs, mask)
+
             fake_img2 = self.img_net2(h_code2)
             fake_imgs.append(fake_img2)
             if att1 is not None:

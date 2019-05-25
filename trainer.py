@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.utils.data
+from torch.utils.data import DataLoader
 
 from PIL import Image
 
@@ -25,14 +25,13 @@ from text2img_model import Text2ImgModel
 
 
 class Text2ImgTrainer:
-    def __init__(self):
-        self.device = torch.device('cuda:2')
-        self.batch_size = 20
+    def __init__(self, batch_size=20, data_path='datasets/CUB_200_2011', device=torch.device('cuda:2')):
+        self.device = device
+        self.batch_size = batch_size
 
-        self.dataset = self.build_dataset()
-        self.data_loader = \
-            torch.utils.data.DataLoader(dataset=self.dataset, batch_size=self.batch_size)
-
+        self.dataset = self.build_dataset(data_path)
+        self.data_loader = DataLoader(dataset=self.dataset, batch_size=self.batch_size)
+        self.path_to_data = data_path
         self.model = self.build_model(
             embedding_dim=256,
             n_tokens=self.dataset.n_tokens,
@@ -80,10 +79,8 @@ class Text2ImgTrainer:
         return data_loader
 
     @staticmethod
-    def build_dataset():
-        preproc = BirdsPreprocessor(data_path='datasets/CUB_200_2011', dataset_name='cub')
-        assert len(preproc.train) == 9813
-        assert len(preproc.test) == 1179
+    def build_dataset(path_to_data):
+        preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
         tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
         dataset = BirdsDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=2)
         image, caption, length = dataset[0]
@@ -226,5 +223,5 @@ class Text2ImgTrainer:
 
 if __name__ == '__main__':
     print(torch.__version__)
-    trainer = Text2ImgTrainer()
+    trainer = Text2ImgTrainer(data_path='dataset/CUB_200_2011', batch_size=2, device=torch.device('cpu'))
     trainer.train(epochs=10)

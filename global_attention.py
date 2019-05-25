@@ -34,29 +34,44 @@ class GlobalAttentionGeneral(nn.Module):
     def applyMask(self, mask):
         self.mask = mask  # batch x sourceL
 
-    def forward(self, query, context):
+    def forward(self, input, context):
         """
-           query: B x T x D
-           context: B x H x W x D
+            input: batch x idf x ih x iw (queryL=ihxiw)
+            context: batch x cdf x sourceL
         """
-        B, D = query.size(0), query.size(2)
-        H, W = context.size(1), context.size(2)
-        SR = H * W
+        ih, iw = input.size(2), input.size(3)
+        queryL = ih * iw
+        batch_size, sourceL = context.size(0), context.size(2)
 
-        # --> B x SR x D
-        context = context.view(B, SR, D)
+        # --> batch x queryL x idf
+        target = input.view(batch_size, -1, queryL)
+        targetT = torch.transpose(target, 1, 2).contiguous()
+        # batch x cdf x sourceL --> batch x cdf x sourceL x 1
+        sourceT = context.unsqueeze(3)
+        # --> batch x idf x sourceL
+        sourceT = self.conv_context(sourceT).squeeze(3)
         # Get attention
-        # (B x SR x D)(B x D x T)
-        # --> B x SR x T
-        attn = torch.bmm(context, query.transpose(1, 2))  # Eq. (7) in AttnGAN paper
-        attn = torch.softmax(attn, dim=2)  # Eq. (8)
+        # (batch x queryL x idf)(batch x idf x sourceL)
+        # -->batch x queryL x sourceL
+        attn = torch.bmm(targetT, sourceT)
+        # --> batch*queryL x sourceL
+        attn = attn.view(batch_size * queryL, sourceL)
+        if self.mask is not None:
+            # batch_size x sourceL --> batch_size*queryL x sourceL
+            mask = self.mask.repeat(queryL, 1)
+            # attn.data.masked_fill_(mask.data, -float('inf'))
 
-        attn = attn * self.gamma1
-        attn = torch.softmax(attn, dim=1)  # Eq. (9)
+        attn = self.sm(attn)  # Eq. (2)
+        # --> batch x queryL x sourceL
+        attn = attn.view(batch_size, queryL, sourceL)
+        # --> batch x sourceL x queryL
+        attn = torch.transpose(attn, 1, 2).contiguous()
 
-        # (B x D x SR)(B x SR x T)
-        # --> B x D x T
-        weightedContext = torch.bmm(context.transpose(1, 2), attn)
+        # (batch x idf x sourceL)(batch x sourceL x queryL)
+        # --> batch x idf x queryL
+        weightedContext = torch.bmm(sourceT, attn)
+        weightedContext = weightedContext.view(batch_size, -1, ih, iw)
+        attn = attn.view(batch_size, -1, ih, iw)
 
-        return weightedContext, attn.view(B, -1, H, W)
+        return weightedContext, attn
 
