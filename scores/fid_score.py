@@ -40,6 +40,8 @@ import torch
 from scipy import linalg
 from scipy.misc import imread
 from torch.nn.functional import adaptive_avg_pool2d
+from torchvision import transforms
+from PIL import Image
 
 try:
     from tqdm import tqdm
@@ -53,17 +55,36 @@ parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
 parser.add_argument('path', type=str, nargs=2,
                     help=('Path to the generated images or '
                           'to .npz statistic files'))
-parser.add_argument('--batch-size', type=int, default=50,
+parser.add_argument('--batch-size', type=int, default=1,
                     help='Batch size to use')
+
 parser.add_argument('--dims', type=int, default=2048,
                     choices=list(InceptionV3.BLOCK_INDEX_BY_DIM),
                     help=('Dimensionality of Inception features to use. '
                           'By default, uses pool3 features'))
+
+parser.add_argument('--single-mode', type=bool, default=False,
+                    help='Allows to evaluate statistics for one path')
+
 parser.add_argument('-c', '--gpu', default='', type=str,
                     help='GPU to use (leave blank for CPU only)')
 
 
-def get_activations(files, model, batch_size=50, dims=2048,
+def remove_one_channel_img(files_list):
+    files = files_list
+
+    idx = 0
+    print ("removing one channel files ...")
+    for img_path in tqdm(files):
+        img = imread(str(img_path)).astype(np.float32)
+        if (len(img.shape) != 3):
+            del files[idx]
+        
+        idx += 1
+
+    return files
+
+def get_activations(files_list, model, batch_size=50, dims=2048,
                     cuda=False, verbose=False):
     """Calculates the activations of the pool_3 layer for all images.
 
@@ -85,6 +106,8 @@ def get_activations(files, model, batch_size=50, dims=2048,
        query tensor.
     """
     model.eval()
+
+    files = remove_one_channel_img(files_list)
 
     if len(files) % batch_size != 0:
         print(('Warning: number of images is not a multiple of the '
@@ -215,13 +238,26 @@ def calculate_activation_statistics(files, model, batch_size=50,
 
 
 def _compute_statistics_of_path(path, model, batch_size, dims, cuda):
+    print ("compute statistics")
+    print ("path: ", path)
     if path.endswith('.npz'):
         f = np.load(path)
         m, s = f['mu'][:], f['sigma'][:]
         f.close()
     else:
         path = pathlib.Path(path)
-        files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
+        #print ("path: ", path)
+        #files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
+        
+        files = []
+        for img_dir in os.listdir(path):
+            images_path = os.path.join(path, img_dir)
+            images_path = pathlib.Path(images_path)
+
+            files += list(images_path.glob('*.jpg'))
+            files += list(images_path.glob('*.png'))
+
+
         m, s = calculate_activation_statistics(files, model, batch_size,
                                                dims, cuda)
 
@@ -253,8 +289,21 @@ if __name__ == '__main__':
     args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
-    fid_value = calculate_fid_given_paths(args.path,
-                                          args.batch_size,
-                                          args.gpu != '',
-                                          args.dims)
-    print('FID: ', fid_value)
+    if (args.single_mode == True):
+        block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[args.dims]
+        model = InceptionV3([block_idx])
+        mu, sigma = _compute_statistics_of_path(args.path[0], model, args.batch_size,
+                                         args.dims, cuda=False)
+        print ("mu: ", mu)
+        print ("sigma: ", sigma)
+        print ("sigma shape: ", sigma.shape)
+        print ("mu shape: ", mu.shape)
+
+    else:
+        
+        fid_value = calculate_fid_given_paths(args.path,
+                                            args.batch_size,
+                                            args.gpu != '',
+                                            args.dims)
+        print('FID: ', fid_value)
+
