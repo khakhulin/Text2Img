@@ -66,13 +66,16 @@ class ConditionNoise(nn.Module):
 
     def encode(self, text_embedding):
         x = self.relu(self.fc(text_embedding))
-        mu = x[:, :self.c_dim]
-        logvar = x[:, self.c_dim:]
+        mu = x[:, :self.c_dim * 2]
+        logvar = x[:, self.c_dim * 2:]
         return mu, logvar
 
     def reparametrize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
-        eps = torch.FloatTensor(std.size(), requires_grad=True).normal_().to(self.device)
+        eps = torch.FloatTensor(std.size())\
+            .normal_() \
+            .requires_grad_(True)\
+            .to(self.device)
         return eps.mul(std).add_(mu)
 
     def forward(self, text_embedding):
@@ -155,19 +158,19 @@ class AttentionGenerator(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, ngf, nef, ncf, branch_num, device, z_dim, num_res_block=10):
+    def __init__(self, ngf, emb_dim, ncf, branch_num, device, z_dim, num_res_block=10):
         super(Generator, self).__init__()
-        self.ca_net = ConditionNoise(nef, ncf, device)
+        self.ca_net = ConditionNoise(emb_dim, ncf, device)
         self.branch_num = branch_num
         if branch_num > 0:
-            self.h_net1 = UpGenMode(ngf * 16, z_dim=z_dim, text_embd_dim=ncf)
+            self.h_net1 = UpGenMode(ngf=ngf * 16, z_dim=z_dim, text_embd_dim=emb_dim)
             self.img_net1 = ImageGenMod(ngf)
         if branch_num > 1:
-            self.h_net2 = AttentionGenerator(ngf, nef, ncf, num_res_block=num_res_block)
-            self.img_net2 = ImageGenMod(ngf)
+            self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, text_embd_dim=ncf, num_res_block=num_res_block)
+            self.img_net2 = ImageGenMod(ngf=ngf)
         if branch_num > 2:
-            self.h_net3 = AttentionGenerator(ngf, nef, ncf, num_res_block=num_res_block)
-            self.img_net3 = ImageGenMod(ngf)
+            self.h_net3 = AttentionGenerator(ngf=ngf, nef=emb_dim, text_embd_dim=ncf, num_res_block=num_res_block)
+            self.img_net3 = ImageGenMod(ngf=ngf)
 
     def forward(self, z_code, sent_emb, word_embs, mask):
         """
