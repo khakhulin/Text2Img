@@ -13,8 +13,6 @@ from data_utils import BirdsPreprocessor, BirdsDataset, CaptionTokenizer
 from utils import save, load, freeze_model
 
 device = torch.device('cuda') if torch.cuda.is_available() else 'cpu'
-UPDATE_INTERVAL = 4
-
 
 class TextEncoder(nn.Module):
 
