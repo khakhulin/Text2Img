@@ -24,54 +24,56 @@ class GlobalAttentionGeneral(nn.Module):
     http://www.aclweb.org/anthology/D15-1166
     """
 
-    def __init__(self, idf, cdf,  gamma1=4.0, dim=1):
+    def __init__(self, idf, cdf,  gamma1=4.0):
         super(GlobalAttentionGeneral, self).__init__()
         self.conv_context = conv1x1(cdf, idf)
-        self.sm = nn.Softmax(dim=dim)
         self.gamma1 = gamma1
         self.mask = None
 
     def applyMask(self, mask):
-        self.mask = mask  # batch x sourceL
+        # mask padding symbols (0)
+        self.mask = mask  # B x T
 
     def forward(self, input, context):
         """
-            input: batch x idf x ih x iw (queryL=ihxiw)
-            context: batch x cdf x sourceL
+            input: B x idf x H x W (SR=H*W)
+            context: B x cdf x T
+            idf - image feature dimensionality
+            cdf - text feature dimensionalty
+            T - (max) length of caption in the batch
         """
-        ih, iw = input.size(2), input.size(3)
-        queryL = ih * iw
-        batch_size, sourceL = context.size(0), context.size(2)
+        # H, W - size of the feature map of the image
+        H, W = input.size(2), input.size(3)
+        # SR - number of sub-regions
+        SR = H * W
+        # B - batch size
+        B = context.size(0)
 
-        # --> batch x queryL x idf
-        target = input.view(batch_size, -1, queryL)
+        # --> B x SR x idf
+        target = input.view(B, -1, SR)
         targetT = torch.transpose(target, 1, 2).contiguous()
-        # batch x cdf x sourceL --> batch x cdf x sourceL x 1
+        # B x cdf x T --> B x cdf x T x 1
         sourceT = context.unsqueeze(3)
-        # --> batch x idf x sourceL
+        # --> B x idf x T
         sourceT = self.conv_context(sourceT).squeeze(3)
         # Get attention
-        # (batch x queryL x idf)(batch x idf x sourceL)
-        # -->batch x queryL x sourceL
+        # (B x SR x idf)(B x idf x T)
+        # --> B x SR x T
         attn = torch.bmm(targetT, sourceT)
-        # --> batch*queryL x sourceL
-        attn = attn.view(batch_size * queryL, sourceL)
         if self.mask is not None:
-            # batch_size x sourceL --> batch_size*queryL x sourceL
-            mask = self.mask.repeat(queryL, 1)
+            # B x T --> B x SR x T
+            mask = self.mask.unsqueeze(1).repeat(1, SR, 1)
             # attn.data.masked_fill_(mask.data, -float('inf'))
 
-        attn = self.sm(attn)  # Eq. (2)
-        # --> batch x queryL x sourceL
-        attn = attn.view(batch_size, queryL, sourceL)
-        # --> batch x sourceL x queryL
+        attn = torch.softmax(attn, dim=2) # Eq. (2)
+        # --> B x T x SR
         attn = torch.transpose(attn, 1, 2).contiguous()
 
-        # (batch x idf x sourceL)(batch x sourceL x queryL)
-        # --> batch x idf x queryL
+        # (B x idf x T)(B x T x SR)
+        # --> B x idf x SR
         weightedContext = torch.bmm(sourceT, attn)
-        weightedContext = weightedContext.view(batch_size, -1, ih, iw)
-        attn = attn.view(batch_size, -1, ih, iw)
+        weightedContext = weightedContext.view(B, -1, H, W)
+        attn = attn.view(B, -1, H, W)
 
         return weightedContext, attn
 
