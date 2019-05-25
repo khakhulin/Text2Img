@@ -3,18 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from PIL import Image
 
-# from miscc.config import cfg
-# from miscc.utils import mkdir_p
-# from miscc.utils import build_super_images, build_super_images2
-# from miscc.utils import weights_init, load_params, copy_G_params
-# from model import G_DCGAN, G_NET
-# from datasets import prepare_data
-# from model import RNN_ENCODER, CNN_ENCODER
 from arguments import init_config
 from data_utils import BirdsPreprocessor, CaptionTokenizer, BirdsDataset
-from losses import words_loss
 from losses import discriminator_loss, generator_loss, KL_loss
 import os
 import time
@@ -22,7 +13,7 @@ import numpy as np
 import sys
 
 from text2img_model import Text2ImgModel
-from utils import copy_params, load_params
+from utils import *
 
 
 class Text2ImgTrainer:
@@ -132,19 +123,9 @@ class Text2ImgTrainer:
             start_t = time.time()
             step = 0
             for data in self.data_loader:
-                # reset requires_grad to be trainable for all Ds
-                # self.set_requires_grad_value(netsD, True)
+                set_requires_grad_value(self.model.discriminators, True)
 
                 images, captions, cap_lens = data
-                # sorted_cap_lens, sorted_cap_indices = \
-                #     torch.sort(cap_lens, dim=0, descending=True)
-                # sorted_images = []
-                # for i in range(len(images)):
-                #     sorted_images.append(images[i].to(self.device))
-                #
-                # captions = captions[sorted_cap_indices].squeeze()
-                # images = sorted_images
-                # cap_lens = sorted_cap_lens
 
                 noise.normal_(0, 1)
                 fake_images, mu, logvar, sentence_embedding, words_embeddings = \
@@ -177,7 +158,7 @@ class Text2ImgTrainer:
                 step += 1
                 gen_iterations += 1
 
-                # self.set_requires_grad_value(netsD, False)
+                set_requires_grad_value(self.model.discriminators, False)
                 self.generator_optimizer.zero_grad()
                 errG_total, G_logs = generator_loss(self.model.discriminators,
                                                     self.model.image_encoder,

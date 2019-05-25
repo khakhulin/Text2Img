@@ -78,3 +78,9 @@ def copy_params(net):
 def load_params(net, new_param):
     for p, new_p in zip(net.parameters(), new_param):
         p.data.copy_(new_p)
+
+
+def set_requires_grad_value(models_list, require_grad):
+    for i in range(len(models_list)):
+        for p in models_list[i].parameters():
+            p.requires_grad = require_grad
