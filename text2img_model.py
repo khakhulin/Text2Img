@@ -118,6 +118,26 @@ class Text2ImgModel(nn.Module):
             mask
         )
         return fake_images, mu, logvar, sentence_embedding, words_embeddings
+    
+    def save_model_ckpt(self, epoch, path):
+        torch.save({
+            'epoch': epoch,
+            'img_enc': self.image_encoder.state_dict(),
+            'txt_enc': self.text_encoder.state_dict(),
+            'discriminator': [d.state_dict() for d in self.discriminators],
+            'generator': self.generator.state_dict()
+        }, path)
+    
+    def load_model_ckpt(self, path):
+        weights = torch.load(path)
+        self.image_encoder.load_state_dict(weights['img_enc'])
+        self.text_encoder.load_state_dict(weights['txt_enc'])
+
+        for i, d in enumerate(self.discriminators):
+            d.load_state_dict(weights['discriminator'][i])
+        self.generator.load_state_dict(weights['generator'])
+        
+        return weights['epoch']
 
 
 if __name__ == '__main__':
