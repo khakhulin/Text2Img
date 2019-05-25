@@ -30,15 +30,17 @@ def init_config():
     parser.add_argument('--encoder_lr', default=2e-3, type=float, help='learning rate for discriminator')
     parser.add_argument('--beta1', default=0.5, type=float, help='learning rate for discriminator')
     parser.add_argument('--beta2', default=0.999, type=float, help='learning rate for discriminator')
+    parser.add_argument('--smooth_lambda', default=0.3, type=float, help='smooth constant for ranking loss')
 
     #  Model
     parser.add_argument('--embd_size', default=64, type=int, help='size of embedding vectors in gcn')
+    parser.add_argument('--hidden_size', default=128, type=int, help='size of embedding vectors in gcn')
     parser.add_argument('--encoder_type', default='lstm', type=str, help='type of the text encoder')
+    parser.add_argument('--is_bert', default=False, action='store_true')
     # DAMSM
     parser.add_argument('--gamma1', default=4.0, type=float, help='')
     parser.add_argument('--gamma2', default=5.0, type=float, help='')
     parser.add_argument('--gamma3', default=10.0, type=float, help='')
-    parser.add_argument('--smooth_lambda', default=0.3, type=float, help='smooth constant for ranking loss')
     parser.add_argument('--damsm_batch_size', default=50, type=int, help='')
     parser.add_argument('--damsm_lr', default=2e-4, type=float, help='')
     parser.add_argument('--damsm_snapshot_interval', default=10, type=int, help='')

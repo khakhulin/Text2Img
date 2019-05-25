@@ -9,10 +9,12 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from arguments import init_config
 from custom_inception_v3 import custom_inception_v3
 from losses import func_attention, cosine_similarity, sent_loss, words_loss
-from data_utils import BirdsPreprocessor, BirdsDataset, CaptionTokenizer
+from data_utils import BirdsPreprocessor, BirdsDataset, CaptionTokenizer, BertCaptionTokenizer, prepare_data
 from utils import save, load, freeze_model
+from pytorch_pretrained_bert import BertModel
 
 device = torch.device('cuda') if torch.cuda.is_available() else 'cpu'
+
 
 class TextEncoder(nn.Module):
 
@@ -66,6 +68,52 @@ class TextEncoder(nn.Module):
         return size
 
 
+class BertEncoder(nn.Module):
+
+    def __init__(self, emb_size=128,
+                 n_layers=1):
+        super(BertEncoder, self).__init__()
+        self.hid_size = emb_size
+        self.n_layers = n_layers
+        self.inp_ch = 30
+        # hidden size per each encoding vector
+        self.enc_size = emb_size
+        self.bert = BertModel.from_pretrained('bert-base-uncased')
+
+        for param in self.bert.parameters():
+            param.requires_grad = False
+
+        self.word_embeddings = nn.Sequential(
+            nn.Linear(768*4, 768*2),
+            nn.Linear(768*2, self.enc_size)
+        )
+        self.sent_embeddings = nn.Conv1d(in_channels=self.inp_ch, out_channels=1, kernel_size=1)
+        self.init_weights()
+
+    def forward(self, captions, cap_len, input_mask):
+        # captions = pack_padded_sequence(captions, cap_len, batch_first=True,
+        #                          enforce_sorted=False)
+        batch_size, seq_len = captions.size(0), captions.size(1)
+        print('Load pretrained BERT')
+        all_encoder_layers, _ = self.bert(captions, token_type_ids=None, attention_mask=input_mask)
+
+        words_features = torch.cat(all_encoder_layers[-5:-1], dim=-1).view(-1, 768*4)
+        words_emb_out = self.word_embeddings(words_features).view(batch_size, seq_len, -1)
+        words_emb = words_emb_out#.transpose(1, 2)
+
+        sent_emb = self.sent_embeddings(words_emb_out).squeeze()
+        return words_emb, sent_emb
+
+    def init_weights(self):
+        initrange = 0.1
+        for m in self.word_embeddings:
+            nn.init.orthogonal_(m.weight.data, 1.0)
+        self.sent_embeddings.weight.data.uniform_(-initrange, initrange)
+
+    def feat_size(self):
+        return self.hid_size
+
+
 class ImageEncoder(nn.Module):
 
     def __init__(self, multimodal_feat_size=256):
@@ -94,11 +142,12 @@ class ImageEncoder(nn.Module):
 
 class DAMSM(nn.Module):
     
-    def __init__(self, text_encoder, image_encoder):
+    def __init__(self, text_encoder, image_encoder, is_bert):
         super(DAMSM, self).__init__()
         self.text_encoder = text_encoder
         self.image_encoder = image_encoder
-    
+        self.is_bert = is_bert
+
     def forward(self, imgs, caps, caps_len, hidden, args):
         # Bx(HxW)xD, BxD
         img_f_w, img_f_s = self.image_encoder(imgs)
@@ -120,17 +169,17 @@ class DAMSM(nn.Module):
 
         for data in tqdm(dataloader, total=len(dataloader)):
 
-            imgs, caps, caps_len = data
-            imgs = imgs[-1].to(device)
-            caps = caps.to(device)
-            caps_len = caps_len.to(device)
-            # Initialize hidden state for LSTM
-            h0, c0 = self.text_encoder.init_hidden(imgs.size(0))
-            h0, c0 = h0.to(device), c0.to(device)
-            w_loss0, w_loss1, s_loss0, s_loss1 = \
-                self.forward(imgs, caps, caps_len, (h0, c0), args)
+            imgs, caps, caps_len, masks = prepare_data(data, device, is_damsm=True)
+            if self.is_bert:
+                w_loss0, w_loss1, s_loss0, s_loss1 = \
+                    self.forward(imgs, caps, caps_len, masks, args)
+            else:
+                # Initialize hidden state for LSTM
+                h0, c0 = self.text_encoder.init_hidden(imgs.size(0))
+                h0, c0 = h0.to(device), c0.to(device)
+                w_loss0, w_loss1, s_loss0, s_loss1 = \
+                    self.forward(imgs, caps, caps_len, (h0, c0), args)
             loss = s_loss0 + s_loss1 + w_loss0 + w_loss1
-
             w_total_loss0 += w_loss0.item()
             w_total_loss1 += w_loss1.item()
             s_total_loss0 += s_loss0.item()
@@ -203,14 +252,19 @@ class DAMSM(nn.Module):
 
         return sum_loss
 
+
 if __name__ == '__main__':
     args = init_config()
+    is_bert = False
     run_name = datetime.datetime.now().strftime('%Y:%m:%d:%H:%M:%S')
     # Load data (Birds)
     preproc = BirdsPreprocessor(data_path='datasets/CUB_200_2011',
         dataset_name='cub'
     )
-    tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
+    if is_bert:
+        tokenizer = BertCaptionTokenizer(word_to_idx=preproc.word_to_idx)
+    else:
+        tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
 
     n_tokens = len(preproc.vocabs['idx_to_word'])
 
@@ -236,9 +290,13 @@ if __name__ == '__main__':
     else:
         device = 'cpu'
     # Create model and optimizer
-    text_encoder = TextEncoder(n_tokens, args.embd_size)
+    print("Embdding dim", args.embd_size)
+    if is_bert:
+        text_encoder = BertEncoder(emb_size=2*args.hidden_size)
+    else:
+        text_encoder = TextEncoder(n_tokens=n_tokens, emb_size=args.embd_size, hid_size=args.hidden_size)
     image_encoder = ImageEncoder(text_encoder.feat_size())
-    damsm = DAMSM(text_encoder, image_encoder).to(device)
+    damsm = DAMSM(text_encoder, image_encoder, is_bert=is_bert).to(device)
     optimizer = torch.optim.Adam(damsm.parameters(),
         lr=args.damsm_lr, betas=(0.5, 0.999)
     )    
