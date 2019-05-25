@@ -12,7 +12,7 @@ from PIL import Image
 # from model import G_DCGAN, G_NET
 # from datasets import prepare_data
 # from model import RNN_ENCODER, CNN_ENCODER
-
+from arguments import init_config
 from data_utils import BirdsPreprocessor, CaptionTokenizer, BirdsDataset
 from losses import words_loss
 from losses import discriminator_loss, generator_loss, KL_loss
@@ -22,13 +22,14 @@ import numpy as np
 import sys
 
 from text2img_model import Text2ImgModel
+from utils import copy_params, load_params
 
 
 class Text2ImgTrainer:
-    def __init__(self, batch_size=20, data_path='datasets/CUB_200_2011', device=torch.device('cuda:2')):
+    def __init__(self, batch_size=20, data_path='datasets/CUB_200_2011', device=torch.device('cuda:2'), args=None):
         self.device = device
         self.batch_size = batch_size
-
+        self.args = args #  TODO find better way to use arguments
         self.dataset = self.build_dataset(data_path)
         self.data_loader = DataLoader(dataset=self.dataset, batch_size=self.batch_size)
         self.path_to_data = data_path
@@ -52,6 +53,8 @@ class Text2ImgTrainer:
                 generator_lr=0.1,
                 discriminator_lr=0.1
             )
+
+        self.avg_snapshot_generator = copy_params(self.model.generator)
 
         # self.batch_size = cfg.TRAIN.BATCH_SIZE
         # self.max_epoch = cfg.TRAIN.MAX_EPOCH
@@ -122,9 +125,9 @@ class Text2ImgTrainer:
         ).normal_(0, 1).to(self.device)
         real_labels = torch.FloatTensor(self.batch_size).fill_(1).to(self.device)
         fake_labels = torch.FloatTensor(self.batch_size).fill_(0).to(self.device)
-        match_labels = torch.LongTensor(range(self.batch_size)).to(self.device)
 
         batch_passed = 0
+        gen_iterations = 0
         for epoch in range(1, epochs):
             start_t = time.time()
             step = 0
@@ -144,7 +147,7 @@ class Text2ImgTrainer:
                 # cap_lens = sorted_cap_lens
 
                 noise.normal_(0, 1)
-                fake_images, mu, logvar, sentence_embedding = \
+                fake_images, mu, logvar, sentence_embedding, words_embeddings = \
                     self.model(
                         images,
                         captions.to(self.device),
@@ -156,7 +159,7 @@ class Text2ImgTrainer:
                 D_logs = ''
                 for i in range(len(self.model.discriminators)):
                     self.model.discriminators[i].zero_grad()
-                    errD = discriminator_loss(
+                    discirminato_loss = discriminator_loss(
                         self.model.discriminators[i],
                         images[i],
                         fake_images[i],
@@ -165,63 +168,44 @@ class Text2ImgTrainer:
                         fake_labels
                     )
                     # backward and update parameters
-                    errD.backward()
-                    optimizersD[i].step()
-                    errD_total += errD
-                    D_logs += 'errD%d: %.2f ' % (i, errD.data[0])
+                    discirminato_loss.backward()
+                    self.discriminator_optimizers[i].step()
+                    errD_total += discirminato_loss
+                    D_logs += 'discr_loss_{0} : {1:.2f} '.format(i, discirminato_loss.item())
 
-                #######################################################
-                # (4) Update G network: maximize log(D(G(z)))
-                ######################################################
                 # compute total loss for training G
                 step += 1
                 gen_iterations += 1
 
-                # do not need to compute gradient for Ds
                 # self.set_requires_grad_value(netsD, False)
-                netG.zero_grad()
-                errG_total, G_logs = \
-                    generator_loss(netsD, image_encoder, fake_imgs, real_labels,
-                                   words_embs, sent_emb, match_labels, cap_lens, class_ids)
+                self.generator_optimizer.zero_grad()
+                errG_total, G_logs = generator_loss(self.model.discriminators,
+                                                    self.model.image_encoder,
+                                                    fake_images, real_labels,
+                                                    words_embeddings, sentence_embedding,
+                                                    cap_lens, self.args)
                 kl_loss = KL_loss(mu, logvar)
                 errG_total += kl_loss
-                G_logs += 'kl_loss: %.2f ' % kl_loss.data[0]
+                G_logs += 'kl_loss: {0:.2f} '.format(kl_loss.item())
                 # backward and update parameters
                 errG_total.backward()
-                optimizerG.step()
-                for p, avg_p in zip(netG.parameters(), avg_param_G):
+                self.generator_optimizer.step()
+                #  Update average parameters of the generator
+                for p, avg_p in zip(self.model.generator.parameters(), self.avg_snapshot_generator ):
                     avg_p.mul_(0.999).add_(0.001, p.data)
 
-                if gen_iterations % 100 == 0:
-                    print(D_logs + '\n' + G_logs)
+                # if gen_iterations % 100 == 0:
+                print(D_logs + '\n' + G_logs)
                 # save images
                 if gen_iterations % 1000 == 0:
-                    backup_para = copy_G_params(netG)
-                    load_params(netG, avg_param_G)
-                    self.save_img_results(netG, fixed_noise, sent_emb,
-                                          words_embs, mask, image_encoder,
-                                          captions, cap_lens, epoch, name='average')
-                    load_params(netG, backup_para)
-                    #
-                    # self.save_img_results(netG, fixed_noise, sent_emb,
-                    #                       words_embs, mask, image_encoder,
-                    #                       captions, cap_lens,
-                    #                       epoch, name='current')
+                    load_params(self.model.generator, self.avg_snapshot_generator)
+                    #  TODO validation
             end_t = time.time()
 
-            print('''[%d/%d][%d]
-                          Loss_D: %.2f Loss_G: %.2f Time: %.2fs'''
-                  % (epoch, self.max_epoch, self.num_batches,
-                     errD_total.data[0], errG_total.data[0],
-                     end_t - start_t))
-
-            if epoch % cfg.TRAIN.SNAPSHOT_INTERVAL == 0:  # and epoch != 0:
-                self.save_model(netG, avg_param_G, netsD, epoch)
-
-        self.save_model(netG, avg_param_G, netsD, self.max_epoch)
 
 
 if __name__ == '__main__':
-    print(torch.__version__)
-    trainer = Text2ImgTrainer(data_path='dataset/CUB_200_2011', batch_size=2, device=torch.device('cpu'))
+    assert torch.__version__== '1.1.0'
+    args = init_config()
+    trainer = Text2ImgTrainer(data_path='dataset/CUB_200_2011', batch_size=2, device=torch.device('cpu'),args=args)
     trainer.train(epochs=10)

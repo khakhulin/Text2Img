@@ -57,31 +57,6 @@ class Discriminator(nn.Module):
         output = self.logits(h_c_code)
         return output.view(-1)
 
-class CA_NET(nn.Module):
-    # some code is modified from vae examples
-    # (https://github.com/pytorch/examples/blob/master/vae/main.py)
-    def __init__(self, embd, ncf):
-        super(CA_NET, self).__init__()
-        self.t_dim = embd
-        self.c_dim = ncf
-        self.fc = nn.Linear(self.t_dim, self.c_dim * 4, bias=True)
-        self.relu = nn.GLU()
-
-    def encode(self, text_embedding):
-        x = self.relu(self.fc(text_embedding))
-        mu = x[:, :self.c_dim]
-        logvar = x[:, self.c_dim:]
-        return mu, logvar
-
-    def reparametrize(self, mu, logvar):
-        std = logvar.mul(0.5).exp_()
-        eps = torch.FloatTensor(std.size()).normal_()
-        return eps.mul(std).add_(mu)
-
-    def forward(self, text_embedding):
-        mu, logvar = self.encode(text_embedding)
-        c_code = self.reparametrize(mu, logvar)
-        return c_code, mu, logvar
 
 class ConditionNoise(nn.Module):
     def __init__(self, embd_dim, condition_dim, device):
@@ -230,14 +205,13 @@ class Generator(nn.Module):
 
 
 class Discriminator64(nn.Module):
-    def __init__(self, dim, embd_dim, condition=False):
+    def __init__(self, dim, embd_dim, uncondition=True):
         super(Discriminator64, self).__init__()
         self.ndf = dim
         self.embd_dim = embd_dim
-        self.condition = condition
+        self.condition = uncondition
         self.img_code_s16_func = Downsample16(dim)
-        if not condition:
-            self.uncond_discriminator = Discriminator(dim, embd_dim, condition=False)
+        self.uncond_discriminator = Discriminator(dim, embd_dim, condition=False)
 
         self.cond_discriminator = Discriminator(dim, embd_dim, condition=True)
 

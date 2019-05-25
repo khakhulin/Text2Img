@@ -7,7 +7,7 @@ from models import (
     Discriminator256,
     Generator
 )
-from utils import init_weight
+from utils import init_weight, copy_params
 
 
 class Text2ImgModel(nn.Module):
@@ -75,18 +75,17 @@ class Text2ImgModel(nn.Module):
         if branch_num > 0:
             self.discriminators.append(Discriminator64(
                 dim=num_discriminator_filters,
-                embd_dim=num_generator_filters,
-                # condition= WTF????
+                embd_dim=embedding_dim,
             ).to(device))
         if branch_num > 1:
             self.discriminators.append(Discriminator128(
                 ndf=num_discriminator_filters,
-                embd_dim=num_generator_filters,
+                embd_dim=embedding_dim,
             ).to(device))
         if branch_num > 2:
             self.discriminators.append(Discriminator256(
                 ndf=num_discriminator_filters,
-                embd_dim=num_generator_filters,
+                embd_dim=embedding_dim,
             ).to(device))
         self.generator.apply(init_weight)
 
@@ -118,7 +117,7 @@ class Text2ImgModel(nn.Module):
             words_embeddings,
             mask
         )
-        return fake_images, mu, logvar, sentence_embedding
+        return fake_images, mu, logvar, sentence_embedding, words_embeddings
 
 
 if __name__ == '__main__':

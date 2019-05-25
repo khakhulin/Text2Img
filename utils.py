@@ -1,4 +1,6 @@
 import os
+from copy import deepcopy
+
 import torch
 import torch.nn as nn
 
@@ -66,3 +68,13 @@ def init_weight(model_layer, gain=1.0, sigma=0.02):  # TODO add initialization w
 def make_dir(file_path):
     if not os.path.exists(file_path):
         os.makedirs(file_path)
+
+
+def copy_params(net):
+    copy_params = deepcopy(list(p.data for p in net.parameters()))
+    return copy_params
+
+
+def load_params(net, new_param):
+    for p, new_p in zip(net.parameters(), new_param):
+        p.data.copy_(new_p)

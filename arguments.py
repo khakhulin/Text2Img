@@ -38,6 +38,7 @@ def init_config():
     parser.add_argument('--gamma1', default=4.0, type=float, help='')
     parser.add_argument('--gamma2', default=5.0, type=float, help='')
     parser.add_argument('--gamma3', default=10.0, type=float, help='')
+    parser.add_argument('--smooth_lambda', default=0.3, type=float, help='smooth constant for ranking loss')
     parser.add_argument('--damsm_batch_size', default=50, type=int, help='')
     parser.add_argument('--damsm_lr', default=2e-4, type=float, help='')
     parser.add_argument('--damsm_snapshot_interval', default=10, type=int, help='')
