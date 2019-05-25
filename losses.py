@@ -5,11 +5,15 @@ import torch.nn as nn
 
 def func_attention(query, context, gamma1):
     """
-    query: B x T x D
-    context: B x H x W x D
+    query: B x T x D (text)
+    context: B x H x W x D (image)
+    T - (max) length of caption in the batch
     """
+    # D - size of the feature vector
+    # B - batch size
     B, D = query.size(0), query.size(2)
     H, W = context.size(1), context.size(2)
+    # SR - number of sub-regions
     SR = H * W
 
     # --> B x SR x D
