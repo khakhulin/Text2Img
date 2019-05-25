@@ -2,13 +2,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+
 def func_attention(query, context, gamma1):
     """
-    query: B x T x D
-    context: B x H x W x D
+    query: B x T x D (text)
+    context: B x H x W x D (image)
+    T - (max) length of caption in the batch
     """
+    # D - size of the feature vector
+    # B - batch size
     B, D = query.size(0), query.size(2)
     H, W = context.size(1), context.size(2)
+    # SR - number of sub-regions
     SR = H * W
 
     # --> B x SR x D
@@ -27,6 +32,7 @@ def func_attention(query, context, gamma1):
     weightedContext = torch.bmm(context.transpose(1, 2), attn)
 
     return weightedContext, attn.view(B, H, W, -1)
+
 
 # ##################Loss for matching text-image###################
 def cosine_similarity(x1, x2, dim=1, eps=1e-8):
@@ -135,3 +141,81 @@ def words_loss(img_features, words_emb, cap_lens, args, class_ids=None):
     loss1 = nn.CrossEntropyLoss()(similarities1, labels)
 
     return loss0, loss1, att_maps
+
+
+def discriminator_loss(netD, real_imgs, fake_imgs, conditions,
+                       real_labels, fake_labels):
+    # Forward
+    real_features = netD(real_imgs)
+    fake_features = netD(fake_imgs.detach())
+    # loss
+    #
+    cond_real_logits = netD.cond_discriminator(real_features, conditions)
+    cond_real_err = nn.BCELoss()(cond_real_logits, real_labels)
+    cond_fake_logits = netD.cond_discriminator(fake_features, conditions)
+    cond_fake_err = nn.BCELoss()(cond_fake_logits, fake_labels)
+
+    batch_size = real_features.size(0)
+    cond_wrong_logits = netD.cond_discriminator(real_features[:(batch_size - 1)], conditions[1:batch_size])
+    cond_wrong_err = nn.BCELoss()(cond_wrong_logits, fake_labels[1:batch_size])
+
+    if netD.uncond_discriminator is not None:
+        real_logits = netD.uncond_discriminator(real_features)
+        fake_logits = netD.uncond_discriminator (fake_features)
+        real_err = nn.BCELoss()(real_logits, real_labels)
+        fake_err = nn.BCELoss()(fake_logits, fake_labels)
+        # TODO maybe constant should be parameters
+        errD = ((real_err + cond_real_err) / 2. +
+                (fake_err + cond_fake_err + cond_wrong_err) / 3.)
+    else:
+        errD = cond_real_err + (cond_fake_err + cond_wrong_err) / 2.
+    return errD
+
+
+def generator_loss(netsD, image_encoder,
+                   fake_images, real_labels,
+                   words_embeddings, sentence_embedding,
+                    cap_lens, args):
+    numDs = len(netsD)
+    batch_size = real_labels.size(0)
+    logs = ''
+    # Forward
+    errG_total = 0
+    for i in range(numDs):
+        features = netsD[i](fake_images[i])
+        cond_logits = netsD[i].cond_discriminator(features, sentence_embedding)
+        cond_errG = nn.BCELoss()(cond_logits, real_labels)
+        if netsD[i].uncond_discriminator is not None:
+            logits = netsD[i].uncond_discriminator(features)
+            errG = nn.BCELoss()(logits, real_labels)
+            g_loss = errG + cond_errG
+        else:
+            g_loss = cond_errG
+        errG_total += g_loss
+        # err_img = errG_total.data[0]
+        logs += 'generator loss {0}: {1:.5f} '.format(i, g_loss.item())
+
+        # Ranking loss
+        if i == (numDs - 1):
+            # words_features: batch_size x nef x 17 x 17
+            # sent_code: batch_size x nef
+            #  TODO unsupported feature
+            class_ids = None
+            region_features, cnn_code = image_encoder(fake_images[i])
+            w_loss0, w_loss1, _ = words_loss(region_features, words_embeddings,  cap_lens, args=args, class_ids=None)
+            w_loss = (w_loss0 + w_loss1) * args.smooth_lambda
+
+            s_loss0, s_loss1 = sent_loss(cnn_code, sentence_embedding, args, class_ids)
+            s_loss = (s_loss0 + s_loss1) * args.smooth_lambda
+
+            errG_total += w_loss + s_loss
+            logs += 'w_loss: {0:.2f} s_loss: {1:.2f} ' .format(w_loss.item(), s_loss.item())
+    return errG_total, logs
+
+
+##################################################################
+def KL_loss(mu, logvar):
+    # -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+    KLD_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
+    KLD = torch.mean(KLD_element).mul_(-0.5)
+    return KLD

@@ -13,7 +13,6 @@ from data_utils import BirdsPreprocessor, BirdsDataset, CaptionTokenizer
 from utils import save, load, freeze_model
 
 device = torch.device('cuda') if torch.cuda.is_available() else 'cpu'
-UPDATE_INTERVAL = 4
 
 class TextEncoder(nn.Module):
 
@@ -52,8 +51,8 @@ class TextEncoder(nn.Module):
 
     def init_hidden(self, batch_size):
         n_hid = self.n_layers * self.n_directions
-        h0 = torch.randn(n_hid, batch_size, self.hid_size)
-        c0 = torch.randn(n_hid, batch_size, self.hid_size)
+        h0 = torch.randn(n_hid, batch_size, self.hid_size).to(next(iter(self.parameters())).device)
+        c0 = torch.randn(n_hid, batch_size, self.hid_size).to(next(iter(self.parameters())).device)
         return h0, c0
     
     def init_weights(self):

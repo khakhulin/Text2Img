@@ -24,39 +24,56 @@ class GlobalAttentionGeneral(nn.Module):
     http://www.aclweb.org/anthology/D15-1166
     """
 
-    def __init__(self, idf, cdf,  gamma1=4.0, dim=1):
+    def __init__(self, idf, cdf,  gamma1=4.0):
         super(GlobalAttentionGeneral, self).__init__()
         self.conv_context = conv1x1(cdf, idf)
-        self.sm = nn.Softmax(dim=dim)
         self.gamma1 = gamma1
         self.mask = None
 
     def applyMask(self, mask):
-        self.mask = mask  # batch x sourceL
+        # mask padding symbols (0)
+        self.mask = mask  # B x T
 
-    def forward(self, query, context):
+    def forward(self, input, context):
         """
-           query: B x T x D
-           context: B x H x W x D
+            input: B x idf x H x W (SR=H*W)
+            context: B x cdf x T
+            idf - image feature dimensionality
+            cdf - text feature dimensionalty
+            T - (max) length of caption in the batch
         """
-        B, D = query.size(0), query.size(2)
-        H, W = context.size(1), context.size(2)
+        # H, W - size of the feature map of the image
+        H, W = input.size(2), input.size(3)
+        # SR - number of sub-regions
         SR = H * W
+        # B - batch size
+        B = context.size(0)
 
-        # --> B x SR x D
-        context = context.view(B, SR, D)
+        # --> B x SR x idf
+        target = input.view(B, -1, SR)
+        targetT = torch.transpose(target, 1, 2).contiguous()
+        # B x cdf x T --> B x cdf x T x 1
+        sourceT = context.unsqueeze(3)
+        # --> B x idf x T
+        sourceT = self.conv_context(sourceT).squeeze(3)
         # Get attention
-        # (B x SR x D)(B x D x T)
+        # (B x SR x idf)(B x idf x T)
         # --> B x SR x T
-        attn = torch.bmm(context, query.transpose(1, 2))  # Eq. (7) in AttnGAN paper
-        attn = torch.softmax(attn, dim=2)  # Eq. (8)
+        attn = torch.bmm(targetT, sourceT)
+        if self.mask is not None:
+            # B x T --> B x SR x T
+            mask = self.mask.unsqueeze(1).repeat(1, SR, 1)
+            # attn.data.masked_fill_(mask.data, -float('inf'))
 
-        attn = attn * self.gamma1
-        attn = torch.softmax(attn, dim=1)  # Eq. (9)
+        attn = torch.softmax(attn, dim=2) # Eq. (2)
+        # --> B x T x SR
+        attn = torch.transpose(attn, 1, 2).contiguous()
 
-        # (B x D x SR)(B x SR x T)
-        # --> B x D x T
-        weightedContext = torch.bmm(context.transpose(1, 2), attn)
+        # (B x idf x T)(B x T x SR)
+        # --> B x idf x SR
+        weightedContext = torch.bmm(sourceT, attn)
+        weightedContext = weightedContext.view(B, -1, H, W)
+        attn = attn.view(B, -1, H, W)
 
-        return weightedContext, attn.view(B, -1, H, W)
+        return weightedContext, attn
 

@@ -1,4 +1,6 @@
 import os
+from copy import deepcopy
+
 import torch
 import torch.nn as nn
 
@@ -49,10 +51,10 @@ def unfreeze_model(model):
         params.requires_grad = True
 
 
-def initi_weight(model_layer, gain=1.0, sigma=0.02): # TODO add initialization with different properties
+def init_weight(model_layer, gain=1.0, sigma=0.02):  # TODO add initialization with different properties
     #  according to authors code
     classname = model_layer.__class__.__name__
-    if classname.find('Conv') != -1:
+    if classname.find('Conv') != -1 and classname.find('LeakyConv') == -1:
         nn.init.orthogonal_(model_layer.weight.data, gain=gain)
     elif classname.find('BatchNorm') != -1:
         model_layer.weight.data.normal_(1.0, sigma)
@@ -66,3 +68,19 @@ def initi_weight(model_layer, gain=1.0, sigma=0.02): # TODO add initialization w
 def make_dir(file_path):
     if not os.path.exists(file_path):
         os.makedirs(file_path)
+
+
+def copy_params(net):
+    copy_params = deepcopy(list(p.data for p in net.parameters()))
+    return copy_params
+
+
+def load_params(net, new_param):
+    for p, new_p in zip(net.parameters(), new_param):
+        p.data.copy_(new_p)
+
+
+def set_requires_grad_value(models_list, require_grad):
+    for i in range(len(models_list)):
+        for p in models_list[i].parameters():
+            p.requires_grad = require_grad

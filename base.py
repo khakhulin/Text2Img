@@ -1,7 +1,7 @@
 import os
 from abc import ABC, abstractmethod
 
-from utils import  make_dir
+from utils import make_dir
 
 
 class BaseModel(ABC):
