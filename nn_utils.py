@@ -31,32 +31,25 @@ class Interpolate(nn.Module):
         return x
 
 
-class ReViewLastDim(nn.Module):
-    def forward(self, x):
-        a,b,c,d, = x.size()
-        return x.view(a, b//2 , c, 2*d)
-
-
 class UpBlock(nn.Sequential):
     def __init__(self, in_planes, out_planes):
         super().__init__(nn.Sequential(
             Interpolate(scale_factor=2, mode='nearest'),
             conv3x3(in_planes, out_planes * 2),
             nn.BatchNorm2d(out_planes * 2),
-            nn.GLU(),
-            ReViewLastDim()
+            nn.GLU(dim=1)
         ))
 
 
 # Keep the spatial size
 
-class GluConv(nn.Sequential):
-    def __init__(self, in_planes, out_planes):
-        super().__init__(nn.Sequential(
-            conv3x3(in_planes, out_planes * 2),
-            nn.BatchNorm2d(out_planes * 2),
-            nn.GLU()
-        ))
+# class GluConv(nn.Sequential):
+#     def __init__(self, in_planes, out_planes):
+#         super().__init__(nn.Sequential(
+#             conv3x3(in_planes, out_planes * 2),
+#             nn.BatchNorm2d(out_planes * 2),
+#             nn.GLU()
+#         ))
 
 
 class LeakyConv3x3(nn.Sequential):

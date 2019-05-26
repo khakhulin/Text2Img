@@ -9,11 +9,10 @@ class ResBlock(nn.Module):
         self.block = nn.Sequential(
             conv3x3(channel_num, channel_num * 2),
             nn.BatchNorm2d(channel_num * 2),
-            nn.GLU(),
-            ReViewLastDim(),
+            nn.GLU(dim=1),
             conv3x3(channel_num, channel_num),
             nn.BatchNorm2d(channel_num),
-            )
+        )
 
 
     def forward(self, x):
@@ -96,7 +95,8 @@ class UpGenMode(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(nz, ngf * 4 * 4 * 2, bias=False),
             nn.BatchNorm1d(ngf * 4 * 4 * 2),
-            nn.GLU())
+            nn.GLU()
+        )
 
         self.upsample = nn.Sequential(
             UpBlock(ngf, ngf // 2),
