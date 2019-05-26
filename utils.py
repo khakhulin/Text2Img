@@ -68,8 +68,12 @@ def init_weight(model_layer, gain=1.0, sigma=0.02):  # TODO add initialization w
 
 def save_images(images, filenames, save_dir, sentenceID=''):
     num_images = images.size(0)
+
     if filenames is None:
         filenames = [str(i) for i in range(num_images)]
+    # [-1, 1] --> [0, 1]
+    img_tensor = images.add(1).div(2).detach().cpu()
+
     for i in range(num_images):
         im = images[i].detach().cpu()
         s_tmp = '%s/single_samples/%s' % (save_dir, filenames[i])
@@ -82,6 +86,8 @@ def save_images(images, filenames, save_dir, sentenceID=''):
         ndarr = img.permute(1, 2, 0).data.cpu().numpy()
         im = Image.fromarray(ndarr)
         im.save(fullpath)
+    
+    return img_tensor
 
 
 def make_dir(file_path):
