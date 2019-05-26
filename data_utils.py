@@ -333,6 +333,20 @@ class BirdsDataset(Dataset):
             with open(txt_path, encoding='utf-8') as captions_file:
                 captions = captions_file.read().splitlines()
                 self.img_captions.append(captions)
+    
+    def tensor_to_caption(self, cap_idx):
+        f = lambda x: \
+            " ".join([self.preprocessor.idx_to_word[idx.item()]
+                      for idx in x if idx.item() != 0])
+        output = []
+
+        if cap_idx.dim() == 1:
+            output.append(f(cap_idx))
+        elif cap_idx.dim() == 2:
+            for i in range(cap_idx.size(0)):
+                output.append(f(cap_idx[i]))
+
+        return output
 
 
 if __name__ == '__main__':
