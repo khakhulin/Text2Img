@@ -281,7 +281,7 @@ if __name__ == '__main__':
     )
     # CUDA
     if args.cuda and torch.cuda.is_available():
-        device = torch.device('cuda')
+        device = torch.device(f'cuda:{args.cuda_device}')
     else:
         device = 'cpu'
     # Create model and optimizer
