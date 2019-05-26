@@ -6,6 +6,7 @@ def init_config():
     parser.add_argument('--debug', default=False, action='store_true')
     #  Experiment
     parser.add_argument('--cuda', default=True, action='store_true')
+    parser.add_argument('--cuda_device', default=0, type=int)
     parser.add_argument('--multi-gpu', default=False, action='store_true')
     parser.add_argument('--num_devices', default=1, type=int, help='numbers of gpus')
     parser.add_argument('--seed', default=42, type=int, help='seed')
