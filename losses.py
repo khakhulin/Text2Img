@@ -203,12 +203,12 @@ def generator_loss(netsD, image_encoder,
             class_ids = None
             region_features, cnn_code = image_encoder(fake_images[i])
             w_loss0, w_loss1, _ = words_loss(region_features, words_embeddings,  cap_lens, args=args, class_ids=None)
-            w_loss = (w_loss0 + w_loss1) * args.smooth_lambda
+            w_loss = w_loss0 + w_loss1
 
             s_loss0, s_loss1 = sent_loss(cnn_code, sentence_embedding, args, class_ids)
-            s_loss = (s_loss0 + s_loss1) * args.smooth_lambda
+            s_loss = s_loss0 + s_loss1
 
-            errG_total += w_loss + s_loss
+            errG_total += (w_loss + s_loss) * args.smooth_lambda
     return errG_total, g_losses, w_loss.item(), s_loss.item()
 
 
