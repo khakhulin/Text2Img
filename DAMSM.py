@@ -13,8 +13,6 @@ from data_utils import BirdsPreprocessor, BirdsDataset, CaptionTokenizer, BertCa
 from utils import save, load, freeze_model
 from pytorch_pretrained_bert import BertModel
 
-device = torch.device('cuda') if torch.cuda.is_available() else 'cpu'
-
 
 class TextEncoder(nn.Module):
 
@@ -250,13 +248,12 @@ class DAMSM(nn.Module):
 
 if __name__ == '__main__':
     args = init_config()
-    is_bert = True
     run_name = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     # Load data (Birds)
     preproc = BirdsPreprocessor(data_path='dataset/CUB_200_2011',
         dataset_name='cub'
     )
-    if is_bert:
+    if args.is_bert:
         tokenizer = BertCaptionTokenizer(word_to_idx=preproc.word_to_idx)
     else:
         tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
@@ -286,7 +283,7 @@ if __name__ == '__main__':
         device = 'cpu'
     # Create model and optimizer
     print("Embdding dim", args.embd_size)
-    if is_bert:
+    if args.is_bert:
         text_encoder = BertEncoder(emb_size=args.embd_size)
     else:
         text_encoder = TextEncoder(
@@ -294,7 +291,7 @@ if __name__ == '__main__':
             text_feat_size=args.embd_size
         )
     image_encoder = ImageEncoder(args.embd_size)
-    damsm = DAMSM(text_encoder, image_encoder, is_bert=is_bert).to(device)
+    damsm = DAMSM(text_encoder, image_encoder, is_bert=args.is_bert).to(device)
     optimizer = torch.optim.Adam(damsm.parameters(),
         lr=args.damsm_lr, betas=(0.5, 0.999)
     )    
@@ -307,12 +304,13 @@ if __name__ == '__main__':
     timer = 0
     start_epoch = 0
     # Continue training
-    if len(args.damsm_start_from):
-        weights, opt, loss, epoch = load(args.damsm_start_from)
-        damsm.load_state_dict(weights)
-        optimizer.load_state_dict(opt)
-        min_loss = loss
-        start_epoch = int(epoch) + 1
+    if len(args.damsm_text_encoder):
+        weights = torch.load(args.damsm_text_encoder)
+        damsm.text_encoder.load_state_dict(weights)
+
+    if len(args.damsm_image_encoder):
+        weights = torch.load(args.damsm_image_encoder)
+        damsm.image_encoder.load_state_dict(weights)
     # Main loop
     for epoch in range(start_epoch, start_epoch + args.damsm_n_epoch):
         damsm.train_epoch(
@@ -323,12 +321,24 @@ if __name__ == '__main__':
         # # Save best model
         if loss < min_loss:
             min_loss = loss
-            best_path = os.path.join(save_dir, 'best.pt')
-            save(best_path, damsm, optimizer, loss, epoch)
+            torch.save(
+                damsm.image_encoder.state_dict(),
+                os.path.join(save_dir, 'best_image_encoder.pt')
+            )
+            torch.save(
+                damsm.text_encoder.state_dict(),
+                os.path.join(save_dir, 'best_text_encoder.pt')
+            )
         # Save checkpoint
         timer += 1
 
         if timer == args.damsm_snapshot_interval:
             timer = 0
-            ckpt_path = os.path.join(save_dir, 'weights%03d.pt' % (epoch+1))
-            save(ckpt_path, damsm, optimizer, loss, epoch)
+            torch.save(
+                damsm.image_encoder.state_dict(),
+                os.path.join(save_dir, 'image_encoder%03d.pt' % (epoch+1))
+            )
+            torch.save(
+                damsm.text_encoder.state_dict(),
+                os.path.join(save_dir, 'text_encoder%03d.pt' % (epoch+1))
+            )
