@@ -66,7 +66,7 @@ def init_weight(model_layer, gain=1.0, sigma=0.02):  # TODO add initialization w
             model_layer.bias.data.fill_(0.0)
 
 
-def save_images(images, filenames, save_dir, sentenceID=0):
+def save_images(images, filenames, save_dir, sentenceID=''):
     num_images = images.size(0)
     if filenames is None:
         filenames = [str(i) for i in range(num_images)]
@@ -75,7 +75,7 @@ def save_images(images, filenames, save_dir, sentenceID=0):
         s_tmp = '%s/single_samples/%s' % (save_dir, filenames[i])
         folder = s_tmp[:s_tmp.rfind('/')]
         make_dir(folder)
-        fullpath = '%s_%d.jpg' % (s_tmp, sentenceID)
+        fullpath = '%s_%s.jpg' % (s_tmp, str(sentenceID))
         # [-1, 1] --> [0, 1]
         img = im.add(1).div(2).mul(255).clamp(0, 255).byte()
         # [0, 1] --> [0, 255]
