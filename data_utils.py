@@ -53,6 +53,8 @@ class BirdsPreprocessor(DataPreprocessor):
         with open(self.images_path_file, "r") as imf:
             self.file_names = imf.read().splitlines()
 
+        self.remove_one_channel_img()
+
         self.vocab_path = self.processed_data + dataset_name + "_vocab.pkl"
         self.train_test_split_path = self.processed_data + dataset_name + "_data.pkl"
 
@@ -81,6 +83,16 @@ class BirdsPreprocessor(DataPreprocessor):
         self.train = self.splitted_data["train"]
         self.test = self.splitted_data["test"]
         self.val = self.splitted_data["val"]
+
+    def remove_one_channel_img(self):
+        idx = 0
+        print ("removing 1 channel images ...")
+        for file in self.file_names:
+            img = Image.open(os.path.join(self.data_dir, 'images', file.split()[1]))
+            if (len((np.array(img)).shape) != 3):
+                img.close()
+                del self.file_names[idx]
+            idx += 1
 
     def preprocess(self):
         """
