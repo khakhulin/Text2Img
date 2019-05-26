@@ -18,54 +18,53 @@ device = torch.device('cuda') if torch.cuda.is_available() else 'cpu'
 
 class TextEncoder(nn.Module):
 
-    def __init__(self, n_tokens, emb_size=256, hid_size=128,
+    def __init__(self, n_tokens, emb_size=256, text_feat_size=128,
                  n_layers=1, bidirectional=True):
         super(TextEncoder, self).__init__()
-        self.hid_size = hid_size
+        self.hid_size = text_feat_size
         self.n_layers = n_layers
         self.bidirectional = bidirectional
         
         if bidirectional:
+            assert self.hid_size % 2 == 0, \
+                'text_feat_size must be devisible by 2 if bidirectional=True'
             self.n_directions = 2
         else:
             self.n_directions = 1
         
         self.emb = nn.Embedding(n_tokens, emb_size)
         self.drop = nn.Dropout(0.5)
-        self.lstm = nn.LSTM(emb_size, hid_size, n_layers,
+        self.lstm = nn.LSTM(emb_size, self.hid_size//2, n_layers,
                             batch_first=True, bidirectional=bidirectional)
         self.init_weights()
     
-    def forward(self, cap, cap_len, hidden):
+    def forward(self, cap, cap_len):
+        bs = cap.size(0)
         h = self.drop(self.emb(cap))
         h = pack_padded_sequence(h, cap_len, batch_first=True,
                                  enforce_sorted=False)
 
         #print(h.size())
-        words, h = self.lstm(h, hidden) # B x T x D
+        # initialize hidden state
+        h0 = torch.randn(
+            self.n_layers*self.n_directions, bs, self.hid_size//2
+        ).to(next(iter(self.parameters())).device)
+        c0 = torch.randn(
+            self.n_layers*self.n_directions, bs, self.hid_size//2
+        ).to(next(iter(self.parameters())).device)
+
+        words, h = self.lstm(h, (h0, c0)) # B x T x D
         words, _ = pad_packed_sequence(words, batch_first=True)
         #print(words.size())
         sent = h[0].transpose(0, 1).contiguous()
         #print(words.size(), sentence.size())
-        sent = sent.view(-1, self.hid_size * self.n_directions)
+        sent = sent.view(-1, self.hid_size)
         
         return words, sent
-
-    def init_hidden(self, batch_size):
-        n_hid = self.n_layers * self.n_directions
-        h0 = torch.randn(n_hid, batch_size, self.hid_size).to(next(iter(self.parameters())).device)
-        c0 = torch.randn(n_hid, batch_size, self.hid_size).to(next(iter(self.parameters())).device)
-        return h0, c0
     
     def init_weights(self):
         initrange = 0.1
         self.emb.weight.data.uniform_(-initrange, initrange)
-    
-    def feat_size(self):
-        size = self.hid_size
-        if self.bidirectional:
-            size *= 2
-        return size
 
 
 class BertEncoder(nn.Module):
@@ -110,9 +109,6 @@ class BertEncoder(nn.Module):
             nn.init.orthogonal_(m.weight.data, 1.0)
         self.sent_embeddings.weight.data.uniform_(-initrange, initrange)
 
-    def feat_size(self):
-        return self.hid_size
-
 
 class ImageEncoder(nn.Module):
 
@@ -148,11 +144,11 @@ class DAMSM(nn.Module):
         self.image_encoder = image_encoder
         self.is_bert = is_bert
 
-    def forward(self, imgs, caps, caps_len, hidden, args):
+    def forward(self, imgs, caps, caps_len, args):
         # Bx(HxW)xD, BxD
         img_f_w, img_f_s = self.image_encoder(imgs)
         # BxTxD, BxD
-        text_f_w, text_f_s = self.text_encoder(caps, caps_len, hidden)
+        text_f_w, text_f_s = self.text_encoder(caps, caps_len)
         s_loss0, s_loss1 = sent_loss(img_f_s, text_f_s, args)
         w_loss0, w_loss1, _ = words_loss(img_f_w, text_f_w, caps_len, args)
 
@@ -174,11 +170,8 @@ class DAMSM(nn.Module):
                 w_loss0, w_loss1, s_loss0, s_loss1 = \
                     self.forward(imgs, caps, caps_len, masks, args)
             else:
-                # Initialize hidden state for LSTM
-                h0, c0 = self.text_encoder.init_hidden(imgs.size(0))
-                h0, c0 = h0.to(device), c0.to(device)
                 w_loss0, w_loss1, s_loss0, s_loss1 = \
-                    self.forward(imgs, caps, caps_len, (h0, c0), args)
+                    self.forward(imgs, caps, caps_len, args)
             loss = s_loss0 + s_loss1 + w_loss0 + w_loss1
             w_total_loss0 += w_loss0.item()
             w_total_loss1 += w_loss1.item()
@@ -227,10 +220,8 @@ class DAMSM(nn.Module):
                 caps = caps.to(device)
                 caps_len = caps_len.to(device)
 
-                h0, c0 = self.text_encoder.init_hidden(imgs.size(0))
-                h0, c0 = h0.to(device), c0.to(device)
                 w_loss0, w_loss1, s_loss0, s_loss1 = \
-                    self.forward(imgs, caps, caps_len, (h0, c0), args)
+                    self.forward(imgs, caps, caps_len, args)
                 # loss = w_loss0 + w_loss1 + s_loss0 + s_loss1
 
                 w_total_loss0 += w_loss0.item()
@@ -256,9 +247,9 @@ class DAMSM(nn.Module):
 if __name__ == '__main__':
     args = init_config()
     is_bert = False
-    run_name = datetime.datetime.now().strftime('%Y:%m:%d:%H:%M:%S')
+    run_name = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     # Load data (Birds)
-    preproc = BirdsPreprocessor(data_path='datasets/CUB_200_2011',
+    preproc = BirdsPreprocessor(data_path='dataset/CUB_200_2011',
         dataset_name='cub'
     )
     if is_bert:
@@ -292,17 +283,20 @@ if __name__ == '__main__':
     # Create model and optimizer
     print("Embdding dim", args.embd_size)
     if is_bert:
-        text_encoder = BertEncoder(emb_size=2*args.hidden_size)
+        text_encoder = BertEncoder(emb_size=args.embd_size)
     else:
-        text_encoder = TextEncoder(n_tokens=n_tokens, emb_size=args.embd_size, hid_size=args.hidden_size)
-    image_encoder = ImageEncoder(text_encoder.feat_size())
+        text_encoder = TextEncoder(
+            n_tokens=n_tokens, emb_size=args.text_enc_emb_size,
+            text_feat_size=args.embd_size
+        )
+    image_encoder = ImageEncoder(args.embd_size)
     damsm = DAMSM(text_encoder, image_encoder, is_bert=is_bert).to(device)
     optimizer = torch.optim.Adam(damsm.parameters(),
         lr=args.damsm_lr, betas=(0.5, 0.999)
     )    
     # Train
     image_dir = 'attn_images'
-    save_dir = os.path.join('pretrained/DAMSM', run_name)
+    save_dir = os.path.join('trained_models/DAMSM', run_name)
     os.makedirs(save_dir, exist_ok=True)
 
     min_loss = np.inf
@@ -317,7 +311,8 @@ if __name__ == '__main__':
         start_epoch = int(epoch) + 1
     # Main loop
     for epoch in range(start_epoch, start_epoch + args.damsm_n_epoch):
-        damsm.train_epoch(epoch, train_loader, optimizer, image_dir,
+        damsm.train_epoch(
+            epoch, train_loader, optimizer, image_dir,
             args, device
         )
         loss = damsm.evaluate(epoch, val_loader, image_dir, args, device)

@@ -5,7 +5,7 @@ def init_config():
 
     parser.add_argument('--debug', default=False, action='store_true')
     #  Experiment
-    parser.add_argument('--cuda', default=False, action='store_true')
+    parser.add_argument('--cuda', default=True, action='store_true')
     parser.add_argument('--multi-gpu', default=False, action='store_true')
     parser.add_argument('--num_devices', default=1, type=int, help='numbers of gpus')
     parser.add_argument('--seed', default=42, type=int, help='seed')
@@ -33,8 +33,8 @@ def init_config():
     parser.add_argument('--smooth_lambda', default=0.3, type=float, help='smooth constant for ranking loss')
 
     #  Model
-    parser.add_argument('--embd_size', default=64, type=int, help='size of embedding vectors in gcn')
-    parser.add_argument('--hidden_size', default=128, type=int, help='size of embedding vectors in gcn')
+    parser.add_argument('--embd_size', default=256, type=int, help='size of embedding vectors in gcn')
+    parser.add_argument('--text_enc_emb_size', default=128, type=int, help='size of embedding vectors in text encoder')
     parser.add_argument('--encoder_type', default='lstm', type=str, help='type of the text encoder')
     parser.add_argument('--is_bert', default=False, action='store_true')
     # DAMSM

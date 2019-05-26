@@ -15,6 +15,7 @@ class Text2ImgModel(nn.Module):
             self,
             embedding_dim,
             n_tokens,
+            text_encoder_embd_size,
             pretrained_text_encoder_path,
             pretrained_image_encoder_path,
             pretrained_generator_path,
@@ -30,7 +31,9 @@ class Text2ImgModel(nn.Module):
 
         self.z_dim = z_dim
         self.is_bert_encoder = is_bert_encoder
-        self.image_encoder = ImageEncoder(multimodal_feat_size=embedding_dim).to(device)
+        self.image_encoder = ImageEncoder(
+            multimodal_feat_size=embedding_dim
+        ).to(device)
 
         if pretrained_image_encoder_path != '':
             state_dict = torch.load(
@@ -49,7 +52,10 @@ class Text2ImgModel(nn.Module):
         if self.is_bert_encoder:
             self.text_encoder = BertEncoder(emb_size=embedding_dim).to(device)
         else:
-            self.text_encoder = TextEncoder(n_tokens=n_tokens, emb_size=embedding_dim).to(device)
+            self.text_encoder = TextEncoder(
+                n_tokens=n_tokens, text_feat_size=embedding_dim,
+                emb_size=text_encoder_embd_size
+            ).to(device)
 
         if pretrained_text_encoder_path != '':
             state_dict = \
@@ -104,13 +110,12 @@ class Text2ImgModel(nn.Module):
             print('Load generator from: ', pretrained_generator_path)
 
     def forward(self, captions, cap_lens, noise, masks):
-        batch_size = captions.shape[0]
         if not self.is_bert_encoder:
-            hidden = self.text_encoder.init_hidden(batch_size)
+            words_embeddings, sentence_embedding = \
+                self.text_encoder(captions, cap_lens)
         else:
-            hidden = masks
-        words_embeddings, sentence_embedding = \
-            self.text_encoder(captions, cap_lens, hidden)
+            words_embeddings, sentence_embedding = \
+                self.text_encoder(captions, cap_lens, masks)
         mask = (captions == 0)
         num_words = words_embeddings.size(2)
         if mask.size(1) > num_words:
@@ -150,6 +155,7 @@ if __name__ == '__main__':
     model = Text2ImgModel(
         embedding_dim=256,
         n_tokens=20,
+        text_encoder_embd_size=128,
         pretrained_text_encoder_path='',
         pretrained_image_encoder_path='',
         pretrained_generator_path='',
@@ -158,6 +164,7 @@ if __name__ == '__main__':
         num_discriminator_filters=64,
         z_dim=100,
         condition_dim=128,  # should be half of embedding_dim
+        is_bert_encoder=False,
         device=DEV
     )
     print(model)

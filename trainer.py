@@ -37,8 +37,9 @@ class Text2ImgTrainer:
         self.path_to_data = data_path
         self.is_bert = self.args.is_bert
         self.model = self.build_model(
-            embedding_dim=256,
+            embedding_dim=args.embd_size,
             n_tokens=self.dataset.n_tokens,
+            text_encoder_embd_size=args.text_enc_emb_size, # not used in bert
             pretrained_text_encoder_path='',
             pretrained_image_encoder_path='',
             pretrained_generator_path='',
@@ -102,7 +103,7 @@ class Text2ImgTrainer:
 
         return generator_optimizer, discriminator_optimizers
 
-    def train(self, run_name, epochs):
+    def train(self, run_name, epochs, log_each, save_img_each, snapshot_each):
         log_dir = os.path.join('trained_models', run_name)
         save_dir = os.path.join('trained_models', run_name)
         os.makedirs(log_dir, exist_ok=True)
@@ -177,33 +178,37 @@ class Text2ImgTrainer:
                 #  Update average parameters of the generator
                 for p, avg_p in zip(self.model.generator.parameters(), self.avg_snapshot_generator):
                     avg_p.mul_(0.999).add_(0.001, p.data)
+                
+                load_params(self.model.generator, self.avg_snapshot_generator)
 
-                # if gen_iterations % 100 == 0:
-                # TODO log every k iteration
+            # if gen_iterations % 100 == 0:
+            # TODO log every k iteration
+            if epoch == 1 or epoch % log_each == 0:
                 self.loss_logger.write(
                     epoch, *D_losses, *G_losses, W_loss, S_loss,
                     kl_loss.item()
                 )
-                self.loss_logger.to_csv(os.path.join(log_dir, 'logs.csv'))
-                # make a snapshot
-                if gen_iterations % 100 == 0:
-                    self.model.save_model_ckpt(
-                        epoch,
-                        os.path.join(save_dir, 'weights%03d.pt' % (epoch))
-                    )
-                # save images
+            self.loss_logger.to_csv(os.path.join(log_dir, 'logs.csv'))
+            # make a snapshot
+            if epoch % snapshot_each == 0:
+                self.model.save_model_ckpt(
+                    epoch,
+                    os.path.join(save_dir, 'weights%03d.pt' % (epoch))
+                )
+            # save images
 
-                if gen_iterations % 1000 == 0:
-                    load_params(self.model.generator, self.avg_snapshot_generator)
-                    #  TODO validation and test part with metric by option
-                    ## EVAL
-                    self.model.generator.eval()
-                    fake_imgs, attention_maps, _, _ = self.model.generator(noise,
-                                                                           sentence_embedding,
-                                                                           words_embeddings,
-                                                                           masks)
-                    save_images(fake_images[-1], None, log_dir, 'vgen_imgs')
-                    self.model.generator.train()
+            if epoch % save_img_each == 0:
+                #  TODO validation and test part with metric by option
+                ## EVAL
+                self.model.generator.eval()
+                fake_imgs, attention_maps, _, _ = self.model.generator(
+                    noise,
+                    sentence_embedding,
+                    words_embeddings,
+                    masks
+                )
+                save_images(fake_images[-1], None, log_dir, 'vgen_imgs')
+                self.model.generator.train()
 
 
 if __name__ == '__main__':
@@ -212,7 +217,7 @@ if __name__ == '__main__':
     cur_time = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     run_name = os.path.join(args.exp_name, cur_time)
     trainer = Text2ImgTrainer(
-        data_path='datasets/CUB_200_2011', batch_size=2,
+        data_path='dataset/CUB_200_2011', batch_size=2,
         #continue_from='trained_models/26:05:2019:00-28-38/weights002.pt',
-        device=torch.device('cpu'), args=args)
-    trainer.train(run_name, epochs=10)
+        device=torch.device('cuda'), args=args)
+    trainer.train(run_name, epochs=10, log_each=1, save_img_each=1, snapshot_each=1)
