@@ -62,7 +62,6 @@ class ImageDataset(torch.utils.data.Dataset):
 		return self.ds_len
 
 
-# https://github.com/sbarratt/inception-score-pytorch
 def inception_score(imgs, cuda = False, batch_size=32, resize=False, splits=10):
 	
 	N = len(imgs)
