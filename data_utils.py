@@ -174,9 +174,10 @@ class BaseTokenizer(ABC):
 
 class CaptionTokenizer(BaseTokenizer):
 
-    def __init__(self, word_to_idx, max_caption_size=MAX_SEQ_LEN):
+    def __init__(self, word_to_idx, idx_to_word=None, max_caption_size=MAX_SEQ_LEN):
         super(CaptionTokenizer, self).__init__(max_caption_size)
         self.word_to_idx = word_to_idx
+        self.idx_to_word = idx_to_word
         self.max_caption_size = max_caption_size
 
     def tokenize(self, caption):
@@ -190,9 +191,11 @@ class CaptionTokenizer(BaseTokenizer):
 
 
 class BertCaptionTokenizer(BaseTokenizer):
-    def __init__(self, word_to_idx, max_caption_size=MAX_SEQ_LEN):
+    def __init__(self, word_to_idx, idx_to_word=None, max_caption_size=MAX_SEQ_LEN):
         super().__init__(max_caption_size)
         self.word_to_idx = word_to_idx
+        self.idx_to_word = idx_to_word
+
         self.max_caption_size = max_caption_size
 
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
@@ -325,8 +328,11 @@ if __name__ == '__main__':
     assert len(preproc.train) == 9813
     assert len(preproc.test) == 1179
     tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
+    tokenizer = BertCaptionTokenizer(word_to_idx=preproc.word_to_idx)
     test_str = 'it is the caption of the birds'
+    test_str2 = 'это подпись к птице'
     print(test_str, tokenizer.tokenize(test_str))
+    print(test_str2, tokenizer.tokenize(test_str))
 
     dataset = BirdsDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=2)
     image, caption, length = dataset[0]

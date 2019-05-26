@@ -72,7 +72,7 @@ class Text2ImgTrainer:
     @staticmethod
     def build_dataset(path_to_data):
         preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
-        tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
+        tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
         dataset = BirdsDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
         image, _, _ = dataset[0]
         assert image[0].size() == torch.Size([3, 64, 64])
@@ -179,6 +179,7 @@ class Text2ImgTrainer:
                     avg_p.mul_(0.999).add_(0.001, p.data)
 
                 # if gen_iterations % 100 == 0:
+                # TODO log every k iteration
                 self.loss_logger.write(
                     epoch, *D_losses, *G_losses, W_loss, S_loss,
                     kl_loss.item()
@@ -191,18 +192,27 @@ class Text2ImgTrainer:
                         os.path.join(save_dir, 'weights%03d.pt' % (epoch))
                     )
                 # save images
-                exit()
+
                 if gen_iterations % 1000 == 0:
                     load_params(self.model.generator, self.avg_snapshot_generator)
-                    #  TODO validation
+                    #  TODO validation and test part with metric by option
+                    ## EVAL
+                    self.model.generator.eval()
+                    fake_imgs, attention_maps, _, _ = self.model.generator(noise,
+                                                                           sentence_embedding,
+                                                                           words_embeddings,
+                                                                           masks)
+                    save_images(fake_images[-1], None, log_dir, 'vgen_imgs')
+                    self.model.generator.train()
 
 
 if __name__ == '__main__':
     assert torch.__version__== '1.1.0'
     args = init_config()
-    run_name = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
+    cur_time = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
+    run_name = os.path.join(args.exp_name, cur_time)
     trainer = Text2ImgTrainer(
-        data_path='dataset/CUB_200_2011', batch_size=2,
+        data_path='datasets/CUB_200_2011', batch_size=2,
         #continue_from='trained_models/26:05:2019:00-28-38/weights002.pt',
-        device=torch.device('cuda'), args=args)
+        device=torch.device('cpu'), args=args)
     trainer.train(run_name, epochs=10)

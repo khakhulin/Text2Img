@@ -3,6 +3,7 @@ from copy import deepcopy
 
 import torch
 import torch.nn as nn
+from PIL import Image
 
 from nn_utils import LeakyConv
 
@@ -63,6 +64,24 @@ def init_weight(model_layer, gain=1.0, sigma=0.02):  # TODO add initialization w
         nn.init.orthogonal_(model_layer.weight.data, 1.0)
         if model_layer.bias is not None:
             model_layer.bias.data.fill_(0.0)
+
+
+def save_images(images, filenames, save_dir, sentenceID=0):
+    num_images = images.size(0)
+    if filenames is None:
+        filenames = [str(i) for i in range(num_images)]
+    for i in range(num_images):
+        im = images[i].detach().cpu()
+        s_tmp = '%s/single_samples/%s' % (save_dir, filenames[i])
+        folder = s_tmp[:s_tmp.rfind('/')]
+        make_dir(folder)
+        fullpath = '%s_%d.jpg' % (s_tmp, sentenceID)
+        # [-1, 1] --> [0, 1]
+        img = im.add(1).div(2).mul(255).clamp(0, 255).byte()
+        # [0, 1] --> [0, 255]
+        ndarr = img.permute(1, 2, 0).data.cpu().numpy()
+        im = Image.fromarray(ndarr)
+        im.save(fullpath)
 
 
 def make_dir(file_path):
