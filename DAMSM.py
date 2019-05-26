@@ -93,7 +93,7 @@ class BertEncoder(nn.Module):
         # captions = pack_padded_sequence(captions, cap_len, batch_first=True,
         #                          enforce_sorted=False)
         batch_size, seq_len = captions.size(0), captions.size(1)
-        print('Load pretrained BERT')
+        #print('Load pretrained BERT')
         all_encoder_layers, _ = self.bert(captions, token_type_ids=None, attention_mask=input_mask)
 
         words_features = torch.cat(all_encoder_layers[-5:-1], dim=-1).view(-1, 768*4)
@@ -144,11 +144,15 @@ class DAMSM(nn.Module):
         self.image_encoder = image_encoder
         self.is_bert = is_bert
 
-    def forward(self, imgs, caps, caps_len, args):
+    def forward(self, imgs, caps, caps_len, args, bert_mask=None):
         # Bx(HxW)xD, BxD
         img_f_w, img_f_s = self.image_encoder(imgs)
         # BxTxD, BxD
-        text_f_w, text_f_s = self.text_encoder(caps, caps_len)
+        if self.is_bert:
+            text_f_w, text_f_s = self.text_encoder(caps, caps_len, bert_mask)
+        else:
+            text_f_w, text_f_s = self.text_encoder(caps, caps_len)
+
         s_loss0, s_loss1 = sent_loss(img_f_s, text_f_s, args)
         w_loss0, w_loss1, _ = words_loss(img_f_w, text_f_w, caps_len, args)
 
@@ -168,7 +172,7 @@ class DAMSM(nn.Module):
             imgs, caps, caps_len, masks = prepare_data(data, device, is_damsm=True)
             if self.is_bert:
                 w_loss0, w_loss1, s_loss0, s_loss1 = \
-                    self.forward(imgs, caps, caps_len, masks, args)
+                    self.forward(imgs, caps, caps_len, args, bert_mask=masks)
             else:
                 w_loss0, w_loss1, s_loss0, s_loss1 = \
                     self.forward(imgs, caps, caps_len, args)
@@ -213,7 +217,7 @@ class DAMSM(nn.Module):
         w_total_loss1 = 0
 
         with torch.no_grad():
-            for data in tqdm(loader, total=len(loader)):
+            for data in loader:
 
                 imgs, caps, caps_len = data
                 imgs = imgs[-1].to(device)
@@ -246,7 +250,7 @@ class DAMSM(nn.Module):
 
 if __name__ == '__main__':
     args = init_config()
-    is_bert = False
+    is_bert = True
     run_name = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     # Load data (Birds)
     preproc = BirdsPreprocessor(data_path='dataset/CUB_200_2011',
