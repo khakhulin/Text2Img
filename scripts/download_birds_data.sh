@@ -1,6 +1,6 @@
 #! /bin/bash
-curl http://www.vision.caltech.edu/visipedia-data/CUB-200-2011/CUB_200_2011.tgz --output CUB_200_2011.tgz
-#wget http://www.vision.caltech.edu/visipedia-data/CUB-200-2011/CUB_200_2011.tgz
+#curl http://www.vision.caltech.edu/visipedia-data/CUB-200-2011/CUB_200_2011.tgz --output CUB_200_2011.tgz
+wget http://www.vision.caltech.edu/visipedia-data/CUB-200-2011/CUB_200_2011.tgz
 tar -xvf CUB_200_2011.tgz CUB_200_2011.tgz CUB_200_2011/images
 tar -xvf CUB_200_2011.tgz CUB_200_2011/images.txt
 curl -L "https://drive.google.com/uc?export=download&id=1HXnzREyrcYkJiF00rIsyjgA6X3ljPK40" > labels.tar.gz
