@@ -26,7 +26,8 @@ class Text2ImgModel(nn.Module):
             z_dim,
             condition_dim,
             is_bert_encoder,
-            device
+            use_sagan,
+            device,
     ):
         super(Text2ImgModel, self).__init__()
 
@@ -79,23 +80,27 @@ class Text2ImgModel(nn.Module):
             ncf=condition_dim,
             branch_num=branch_num,
             device=device,
-            z_dim=z_dim
+            z_dim=z_dim,
+            is_sagan=use_sagan
         ).to(device)
         self.discriminators = []
         if branch_num > 0:
             self.discriminators.append(Discriminator64(
                 dim=num_discriminator_filters,
                 embd_dim=embedding_dim,
+                is_spectral=use_sagan
             ).to(device))
         if branch_num > 1:
             self.discriminators.append(Discriminator128(
                 ndf=num_discriminator_filters,
                 embd_dim=embedding_dim,
+                is_spectral=use_sagan
             ).to(device))
         if branch_num > 2:
             self.discriminators.append(Discriminator256(
                 ndf=num_discriminator_filters,
                 embd_dim=embedding_dim,
+                is_spectral=use_sagan
             ).to(device))
         self.generator.apply(init_weight)
 
@@ -159,7 +164,7 @@ class Text2ImgModel(nn.Module):
 
 
 if __name__ == '__main__':
-    DEV = torch.device('cuda:2')
+    DEV = torch.device('cpu')
     model = Text2ImgModel(
         embedding_dim=256,
         n_tokens=20,
@@ -173,6 +178,7 @@ if __name__ == '__main__':
         z_dim=100,
         condition_dim=128,  # should be half of embedding_dim
         is_bert_encoder=False,
-        device=DEV
+        device=DEV,
+        use_sagan=True
     )
     print(model)

@@ -40,6 +40,7 @@ class Text2ImgTrainer:
         )
         self.path_to_data = data_path
         self.is_bert = self.args.is_bert
+        self.use_sagan = self.use_sagan
         self.model = self.build_model(
             embedding_dim=args.embd_size,
             n_tokens=self.dataset.n_tokens,
@@ -53,7 +54,8 @@ class Text2ImgTrainer:
             z_dim=100,
             condition_dim=128,
             is_bert_encoder=self.is_bert,
-            device=self.device
+            device=self.device,
+            use_sagan=self.use_sagan
         )
         
         self.start = 0
