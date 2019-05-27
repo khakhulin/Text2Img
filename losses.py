@@ -144,26 +144,32 @@ def words_loss(img_features, words_emb, cap_lens, args, class_ids=None):
 
 
 def discriminator_loss(netD, real_imgs, fake_imgs, conditions,
-                       real_labels, fake_labels):
+                       real_labels, fake_labels, loss_type='ls-gan'):
     # Forward
     real_features = netD(real_imgs)
     fake_features = netD(fake_imgs.detach())
     # loss
-    #
+    if loss_type == 'ls-gan':
+        criterion = nn.MSELoss()
+    elif loss_type == 'vanila':
+        criterion = nn.BCELoss()
+    else:
+        criterion = nn.BCELoss()
+
     cond_real_logits = netD.cond_discriminator(real_features, conditions)
-    cond_real_err = nn.BCELoss()(cond_real_logits, real_labels)
+    cond_real_err = criterion(cond_real_logits, real_labels)
     cond_fake_logits = netD.cond_discriminator(fake_features, conditions)
-    cond_fake_err = nn.BCELoss()(cond_fake_logits, fake_labels)
+    cond_fake_err = criterion(cond_fake_logits, fake_labels)
 
     batch_size = real_features.size(0)
     cond_wrong_logits = netD.cond_discriminator(real_features[:(batch_size - 1)], conditions[1:batch_size])
-    cond_wrong_err = nn.BCELoss()(cond_wrong_logits, fake_labels[1:batch_size])
+    cond_wrong_err = criterion(cond_wrong_logits, fake_labels[1:batch_size])
 
     if netD.uncond_discriminator is not None:
         real_logits = netD.uncond_discriminator(real_features)
-        fake_logits = netD.uncond_discriminator (fake_features)
-        real_err = nn.BCELoss()(real_logits, real_labels)
-        fake_err = nn.BCELoss()(fake_logits, fake_labels)
+        fake_logits = netD.uncond_discriminator(fake_features)
+        real_err = criterion(real_logits, real_labels)
+        fake_err = criterion(fake_logits, fake_labels)
         # TODO maybe constant should be parameters
         errD = ((real_err + cond_real_err) / 2. +
                 (fake_err + cond_fake_err + cond_wrong_err) / 3.)
@@ -179,15 +185,23 @@ def generator_loss(netsD, image_encoder,
     numDs = len(netsD)
     batch_size = real_labels.size(0)
     g_losses = []
+    # loss
+    if args.loss_type == 'ls-gan':
+        criterion = nn.MSELoss()
+    elif args.loss_type == 'vanila':
+        criterion = nn.BCELoss()
+    else:
+        criterion = nn.BCELoss()
+
     # Forward
     errG_total = 0
     for i in range(numDs):
         features = netsD[i](fake_images[i])
         cond_logits = netsD[i].cond_discriminator(features, sentence_embedding)
-        cond_errG = nn.BCELoss()(cond_logits, real_labels)
+        cond_errG = criterion(cond_logits, real_labels)
         if netsD[i].uncond_discriminator is not None:
             logits = netsD[i].uncond_discriminator(features)
-            errG = nn.BCELoss()(logits, real_labels)
+            errG = criterion(logits, real_labels)
             g_loss = errG + cond_errG
         else:
             g_loss = cond_errG
