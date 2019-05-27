@@ -22,12 +22,13 @@ def init_config():
     parser.add_argument('--datasets', default='birds', type=str, help='type of the dataset')
 
     #  Training
-    parser.add_argument('--log_every', default=1, type=int, help='frequency of logging')
-    parser.add_argument('--batch_size', default=64, type=int, help='size of batch in buffer')
+    parser.add_argument('--log_every', default=200, type=int, help='frequency of logging')
+    parser.add_argument('--snapshot_every', default=2000, type=int, help='frequency of model saving')
+    parser.add_argument('--batch_size', default=8, type=int, help='size of batch in buffer')
     parser.add_argument('--branch_num', default=3, type=int, help='numpber of phase with upscale images')
-    parser.add_argument('--max_epoch', default=20, type=int, help='num of training epoch ')
-    parser.add_argument('--generator_lr', default=1e-3, type=float, help='learning rate for  generator')
-    parser.add_argument('--discriminator_lr', default=1e-3, type=float, help='learning rate for discriminator')
+    parser.add_argument('--max_epoch', default=40, type=int, help='num of training epoch ')
+    parser.add_argument('--generator_lr', default=2e-4, type=float, help='learning rate for  generator')
+    parser.add_argument('--discriminator_lr', default=2e-4, type=float, help='learning rate for discriminator')
     parser.add_argument('--encoder_lr', default=2e-3, type=float, help='learning rate for discriminator')
     parser.add_argument('--beta1', default=0.5, type=float, help='learning rate for discriminator')
     parser.add_argument('--beta2', default=0.999, type=float, help='learning rate for discriminator')

@@ -43,8 +43,8 @@ class Text2ImgTrainer:
             embedding_dim=args.embd_size,
             n_tokens=self.dataset.n_tokens,
             text_encoder_embd_size=args.text_enc_emb_size, # not used in bert
-            pretrained_text_encoder_path='',
-            pretrained_image_encoder_path='',
+            pretrained_text_encoder_path='trained_models/best_text_encoder.pt',
+            pretrained_image_encoder_path='trained_models/best_image_encoder.pt',
             pretrained_generator_path='',
             branch_num=args.branch_num,
             num_generator_filters=32,
@@ -55,10 +55,10 @@ class Text2ImgTrainer:
             device=self.device
         )
         
-        self.start_epoch = 1
+        self.start = 0
         if not continue_from is None and os.path.exists(continue_from):
             print('Start from checkpoint')
-            self.start_epoch = self.model.load_model_ckpt(continue_from)
+            self.start = self.model.load_model_ckpt(continue_from)
 
         self.generator_optimizer, self.discriminator_optimizers = \
             self.build_optimizers(
@@ -77,7 +77,7 @@ class Text2ImgTrainer:
     def build_dataset(path_to_data):
         preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
         tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
-        dataset = BirdsDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
+        dataset = BirdsDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
         image, _, _ = dataset[0]
         assert image[0].size() == torch.Size([3, 64, 64])
         return dataset
@@ -106,7 +106,7 @@ class Text2ImgTrainer:
 
         return generator_optimizer, discriminator_optimizers
 
-    def train(self, run_name, epochs, log_each, save_img_each, snapshot_each, n_images=5):
+    def train(self, run_name, epochs, n_images=5):
         log_dir = os.path.join('trained_models', run_name)
         save_dir = os.path.join('trained_models', run_name)
         os.makedirs(log_dir, exist_ok=True)
@@ -118,7 +118,12 @@ class Text2ImgTrainer:
         )
         val_data = next(iter(val_dataloader))
         del val_dataloader
-        val_img, val_cap, val_cap_len, val_mask = prepare_data(val_data, self.device)
+        val_img, val_cap, val_cap_len, val_mask = prepare_data(
+            val_data, self.device
+        )
+        val_cap_str = self.dataset.tensor_to_caption(val_cap)
+        val_cap_str = ['%d. '%(i)+cap_str for i, cap_str in enumerate(val_cap_str)]
+        self.writer.add_text('captions', "\n".join(val_cap_str))
 
         # fixed_noise = torch.FloatTensor(
         #     self.batch_size,
@@ -128,13 +133,13 @@ class Text2ImgTrainer:
         fake_labels = torch.FloatTensor(self.batch_size).fill_(0).to(self.device)
 
         # batch_passed = 0
-        gen_iterations = 0
+        gen_iterations = self.start
         
-        for epoch in range(self.start_epoch, self.start_epoch + epochs):
+        for epoch in range(epochs):
             print('Epoch %04d' % (epoch))
-            step = 0.0
-            D_losses = [0.0 for _ in range(len(self.model.discriminators))]
-            G_losses = [0.0 for _ in range(len(self.model.discriminators))]
+            # step = 0
+            D_losses = np.zeros((len(self.model.discriminators),))
+            G_losses = np.zeros((len(self.model.discriminators),))
             W_loss = 0.0
             S_loss = 0.0
             KLD_loss = 0.0
@@ -177,7 +182,7 @@ class Text2ImgTrainer:
                     D_losses[i] += d_loss.item()
 
                 # compute total loss for training G
-                step += 1
+                # step += 1
                 gen_iterations += 1
 
                 set_requires_grad_value(self.model.discriminators, False)
@@ -202,73 +207,79 @@ class Text2ImgTrainer:
                 errG_total.backward()
                 self.generator_optimizer.step()
                 #  Update average parameters of the generator
-                for p, avg_p in zip(self.model.generator.parameters(), self.avg_snapshot_generator):
-                    avg_p.mul_(0.999).add_(0.001, p.data)
-                
-                load_params(self.model.generator, self.avg_snapshot_generator)
+                # for p, avg_p in zip(self.model.generator.parameters(), self.avg_snapshot_generator):
+                #    avg_p.mul_(0.999).add_(0.001, p.data)
 
-            if epoch == 1 or epoch % log_each == 0:
-                # Mean losses
-                D_losses = [l / len(self.data_loader) for l in D_losses]
-                G_losses = [l / len(self.data_loader) for l in G_losses]
-                W_loss /= len(self.data_loader)
-                S_loss /= len(self.data_loader)
-                KLD_loss /= len(self.data_loader)
-                # Save losses to log file
-                self.loss_logger.write(
-                    epoch, *D_losses, *G_losses,
-                    W_loss, S_loss, KLD_loss
-                )
-                self.loss_logger.to_csv(os.path.join(log_dir, 'logs.csv'))
-                # Save losses to tensorboard
-                self.writer.add_scalars(
-                    'losses/G_losses',
-                    {'g%d'%(i): val for i, val in enumerate(G_losses)},
-                    epoch
-                )
-                self.writer.add_scalars(
-                    'losses/D_losses',
-                    {'d%d'%(i): val for i, val in enumerate(D_losses)},
-                    epoch
-                )
-                self.writer.add_scalars(
-                    'losses/SW_losses',
-                    {'s_loss': S_loss, 'w_loss': W_loss},
-                    epoch
-                )
-                self.writer.add_scalar('losses/KL_loss', KLD_loss, epoch)
-            # make a snapshot
-            if epoch % snapshot_each == 0:
-                self.model.save_model_ckpt(
-                    epoch,
-                    os.path.join(save_dir, 'weights%03d.pt' % (epoch))
-                )
-            # save images
-
-            if epoch == 1 or epoch % save_img_each == 0:
-                #  TODO validation and test part with metric by option
-                ## EVAL
-                self.model.eval()
-
-                val_noise = torch.FloatTensor(
-                    val_cap.size(0),
-                    self.model.z_dim
-                ).to(self.device).normal_(0, 1)
-
-                gen_imgs, _, _, _, _ = \
-                    self.model(
-                        val_cap,
-                        val_cap_len,
-                        val_noise,
-                        val_mask
+                if gen_iterations % args.log_every == 0:
+                    # Mean losses
+                    D_losses /= args.log_every
+                    G_losses /= args.log_every
+                    W_loss /= args.log_every
+                    S_loss /= args.log_every
+                    KLD_loss /= args.log_every
+                    # Save losses to log file
+                    self.loss_logger.write(
+                        epoch, *D_losses, *G_losses,
+                        W_loss, S_loss, KLD_loss
                     )
+                    self.loss_logger.to_csv(os.path.join(log_dir, 'logs.csv'))
+                    # Save losses to tensorboard
+                    self.writer.add_scalars(
+                        'losses/G_losses',
+                        {'g%d'%(i): val for i, val in enumerate(G_losses)},
+                        gen_iterations
+                    )
+                    self.writer.add_scalars(
+                        'losses/D_losses',
+                        {'d%d'%(i): val for i, val in enumerate(D_losses)},
+                        gen_iterations
+                    )
+                    self.writer.add_scalars(
+                        'losses/SW_losses',
+                        {'s_loss': S_loss, 'w_loss': W_loss},
+                        gen_iterations
+                    )
+                    self.writer.add_scalar('losses/KL_loss', KLD_loss, epoch)
+                    # Erase accumulated losses
+                    D_losses.fill(0)
+                    G_losses.fill(0)
+                    W_loss = 0.0
+                    S_loss = 0.0
+                    KLD_loss = 0.0
+                # save images
+                if gen_iterations % args.log_every == 0:
+                    #  TODO validation and test part with metric by option
+                    ## EVAL
+                    self.model.eval()
+                    # backup_params = copy_params(self.model.generator)
+                    # load_params(self.model.generator, self.avg_snapshot_generator)
 
-                img_tensor = save_images(gen_imgs[-1], None, log_dir, 'vgen_imgs')
-                img_tensor = make_grid(img_tensor, nrow=n_images, padding=5)
-                self.writer.add_image('images', img_tensor, epoch)
+                    val_noise = torch.FloatTensor(
+                        val_cap.size(0),
+                        self.model.z_dim
+                    ).to(self.device).normal_(0, 1)
 
-                self.model.train()
-        
+                    gen_imgs, _, _, _, _ = \
+                        self.model(
+                            val_cap,
+                            val_cap_len,
+                            val_noise,
+                            val_mask
+                        )
+                    
+                    # load_params(self.model.generator, backup_params)
+                    # TODO do not replace images
+                    img_tensor = save_images(gen_imgs[-1], None, log_dir, 'vgen_imgs')
+                    img_tensor = make_grid(img_tensor, nrow=n_images, padding=5)
+                    self.writer.add_image('images', img_tensor, gen_iterations)
+
+                    self.model.train()
+                # make a snapshot
+                if gen_iterations % args.snapshot_every == 0:
+                    self.model.save_model_ckpt(
+                        gen_iterations,
+                        os.path.join(save_dir, 'weights%05d.pt' % (gen_iterations))
+                    )
         self.writer.close()
 
 if __name__ == '__main__':
@@ -277,7 +288,7 @@ if __name__ == '__main__':
     cur_time = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     run_name = os.path.join(args.exp_name, cur_time)
     trainer = Text2ImgTrainer(
-        data_path='dataset/CUB_200_2011', batch_size=2,
+        data_path='dataset/CUB_200_2011', batch_size=args.batch_size,
         #continue_from='trained_models/26:05:2019:00-28-38/weights002.pt',
         device=torch.device('cuda'), args=args)
-    trainer.train(run_name, epochs=10, log_each=1, save_img_each=1, snapshot_each=1)
+    trainer.train(run_name, epochs=args.max_epoch)
