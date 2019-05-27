@@ -22,6 +22,10 @@ def init_config():
     parser.add_argument('--datasets', default='birds', type=str, help='type of the dataset')
 
     #  Training
+    parser.add_argument('--pretrained_text_enc', default='', type=str, help='path to load text encoder weights')
+    parser.add_argument('--pretrained_image_enc', default='', type=str, help='path to load image encoder weights')
+    parser.add_argument('--pretrained_generator', default='', type=str, help='path to load generator weights')
+    parser.add_argument('--continue_from', default='', type=str, help='checkpoint path to start from')
     parser.add_argument('--log_every', default=200, type=int, help='frequency of logging')
     parser.add_argument('--snapshot_every', default=2000, type=int, help='frequency of model saving')
     parser.add_argument('--batch_size', default=8, type=int, help='size of batch in buffer')

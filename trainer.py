@@ -25,16 +25,20 @@ from scores.prd_score import prd_score, get_plot_as_numpy
 
 
 class Text2ImgTrainer:
-    def __init__(self, batch_size=20, data_path='datasets/CUB_200_2011', continue_from=None,
-                 device=torch.device('cuda:2'), args=None):
-        self.device = device
+    def __init__(self, batch_size=20, data_path='datasets/CUB_200_2011',
+                 args=None):
+        if args.cuda and torch.cuda.is_available():
+            self.device = torch.device(f'cuda:{args.cuda_device}')
+        else:
+            self.device = 'cpu'
         self.writer = SummaryWriter()
         self.batch_size = batch_size
         self.args = args #  TODO find better way to use arguments
         self.dataset = self.build_dataset(data_path)
         self.data_loader = DataLoader(
             dataset=self.dataset,
-            batch_size=self.batch_size, drop_last=True
+            batch_size=self.batch_size,
+            shuffle=True, drop_last=True
         )
         self.loss_logger = Logger(['Epoch'] +
             ['D_loss_%d' % (i) for i in range(args.branch_num)] +
@@ -47,9 +51,9 @@ class Text2ImgTrainer:
             embedding_dim=args.embd_size,
             n_tokens=self.dataset.n_tokens,
             text_encoder_embd_size=args.text_enc_emb_size, # not used in bert
-            pretrained_text_encoder_path='trained_models/best_text_encoder.pt',
-            pretrained_image_encoder_path='trained_models/best_image_encoder.pt',
-            pretrained_generator_path='',
+            pretrained_text_encoder_path=args.pretrained_text_enc,
+            pretrained_image_encoder_path=args.pretrained_image_enc,
+            pretrained_generator_path=args.pretrained_generator,
             branch_num=args.branch_num,
             num_generator_filters=32,
             num_discriminator_filters=64,
@@ -60,9 +64,9 @@ class Text2ImgTrainer:
         )
         
         self.start = 0
-        if not continue_from is None and os.path.exists(continue_from):
+        if args.continue_from and os.path.exists(args.continue_from):
             print('Start from checkpoint')
-            self.start = self.model.load_model_ckpt(continue_from)
+            self.start = self.model.load_model_ckpt(args.continue_from)
 
         self.generator_optimizer, self.discriminator_optimizers = \
             self.build_optimizers(
@@ -244,7 +248,9 @@ class Text2ImgTrainer:
                         {'s_loss': S_loss, 'w_loss': W_loss},
                         gen_iterations
                     )
-                    self.writer.add_scalar('losses/KL_loss', KLD_loss, epoch)
+                    self.writer.add_scalar(
+                        'losses/KL_loss', KLD_loss, gen_iterations
+                    )
                     # Erase accumulated losses
                     D_losses.fill(0)
                     G_losses.fill(0)
@@ -255,7 +261,7 @@ class Text2ImgTrainer:
                 if gen_iterations % args.log_every == 0:
                     #  TODO validation and test part with metric by option
                     ## EVAL
-                    self.model.eval()
+                    self.model.generator.eval()
                     # backup_params = copy_params(self.model.generator)
                     # load_params(self.model.generator, self.avg_snapshot_generator)
 
@@ -264,7 +270,7 @@ class Text2ImgTrainer:
                         self.model.z_dim
                     ).to(self.device).normal_(0, 1)
 
-                    gen_imgs, _, _, _, _ = \
+                    gen_imgs_stack, _, _, _, _ = \
                         self.model(
                             val_cap,
                             val_cap_len,
@@ -273,26 +279,26 @@ class Text2ImgTrainer:
                         )
                     
                     # load_params(self.model.generator, backup_params)
-                    # TODO do not replace images
-                    img_tensor = save_images(gen_imgs[-1], None, log_dir, 'vgen_imgs')
-                    img_tensor = make_grid(img_tensor, nrow=n_images, padding=5)
-                    self.writer.add_image('images', img_tensor, gen_iterations)
+                    for i, gen_imgs in enumerate(gen_imgs_stack):
+                        size = 64*(2**i)
+                        img_tensor = save_images(gen_imgs, None, log_dir, gen_iterations, size)
+                        img_tensor = make_grid(img_tensor, nrow=n_images, padding=5)
+                        self.writer.add_image(
+                            'images/%d' % (size),
+                            img_tensor, gen_iterations
+                        )
 
-                    img_tensor = save_images(gen_imgs[-1], None, log_dir, 'vgen_imgs')
-                    img_tensor = make_grid(img_tensor, nrow=n_images, padding=5)
-                    self.writer.add_image('images', img_tensor, epoch)
+                    #val_inception_score = inception_score(gen_imgs, batch_size=4)
+                    #self.writer.add_scalar('metrics/inception', val_inception_score, epoch)
 
-                    val_inception_score = inception_score(gen_imgs, batch_size=4)
-                    self.writer.add_scalar('metrics/inception', val_inception_score, epoch)
+                    #val_fid_score = fid_score(gen_imgs, val_img, batch_size=4, cuda=self.device, dims=2048)
+                    #self.writer.add_scalar('metrics/fid', val_fid_score, epoch)
 
-                    val_fid_score = fid_score(gen_imgs, val_img, batch_size=4, cuda=self.device, dims=2048)
-                    self.writer.add_scalar('metrics/fid', val_fid_score, epoch)
+                    #precision, recall = prd_score(val_img, gen_imgs)
+                    #pr_plot = get_plot_as_numpy(precision, recall)
+                    #self.writer.add_image('metrics/prd_score', pr_plot, epoch)
 
-                    precision, recall = prd_score(val_img, gen_imgs)
-                    pr_plot = get_plot_as_numpy(precision, recall)
-                    self.writer.add_image('metrics/prd_score', pr_plot, epoch)
-
-                    self.model.train()
+                    self.model.generator.train()
                 # make a snapshot
                 if gen_iterations % args.snapshot_every == 0:
                     self.model.save_model_ckpt(
@@ -307,7 +313,6 @@ if __name__ == '__main__':
     cur_time = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     run_name = os.path.join(args.exp_name, cur_time)
     trainer = Text2ImgTrainer(
-        data_path='datasets/CUB_200_2011', batch_size=args.batch_size,
-        #continue_from='trained_models/26:05:2019:00-28-38/weights002.pt',
-        device=torch.device('cuda'), args=args)
+        data_path='dataset/CUB_200_2011', batch_size=args.batch_size, args=args
+    )
     trainer.train(run_name, epochs=args.max_epoch)
