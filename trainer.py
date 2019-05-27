@@ -143,15 +143,15 @@ class Text2ImgTrainer:
 
         # batch_passed = 0
         gen_iterations = self.start
+        D_losses = np.zeros((len(self.model.discriminators),))
+        G_losses = np.zeros((len(self.model.discriminators),))
+        W_loss = 0.0
+        S_loss = 0.0
+        KLD_loss = 0.0
         
         for epoch in range(epochs):
-            print('Epoch %04d' % (epoch))
+            print('Epoch %03d' % (epoch))
             # step = 0
-            D_losses = np.zeros((len(self.model.discriminators),))
-            G_losses = np.zeros((len(self.model.discriminators),))
-            W_loss = 0.0
-            S_loss = 0.0
-            KLD_loss = 0.0
 
             for data in tqdm.tqdm(self.data_loader, total=len(self.data_loader)):
                 set_requires_grad_value(self.model.discriminators, True)
@@ -219,6 +219,22 @@ class Text2ImgTrainer:
                 #  Update average parameters of the generator
                 # for p, avg_p in zip(self.model.generator.parameters(), self.avg_snapshot_generator):
                 #    avg_p.mul_(0.999).add_(0.001, p.data)
+
+                # Track generator gradients
+                top, bottom = get_top_bottom_mean_grad(
+                    self.model.generator.parameters()
+                )
+                self.writer.add_scalars(
+                    'grad/G', {'top': top, 'bottom': bottom}, gen_iterations
+                )
+                # Track discriminators gradients
+                for i in range(len(self.model.discriminators)):
+                    top, bottom = get_top_bottom_mean_grad(
+                        self.model.discriminators[i].parameters()
+                    )
+                    self.writer.add_scalars(
+                        'grad/D%d'%(i), {'top': top, 'bottom': bottom}, gen_iterations
+                    )
 
                 if gen_iterations % args.log_every == 0:
                     # Mean losses
