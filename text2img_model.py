@@ -7,7 +7,7 @@ from models import (
     Discriminator256,
     Generator
 )
-from utils import init_weight, copy_params
+from utils import init_weight, copy_params, freeze_model
 
 
 class Text2ImgModel(nn.Module):
@@ -139,9 +139,16 @@ class Text2ImgModel(nn.Module):
         }, path)
     
     def load_model_ckpt(self, path):
+        # Load
         weights = torch.load(path)
         self.image_encoder.load_state_dict(weights['img_enc'])
         self.text_encoder.load_state_dict(weights['txt_enc'])
+        # Freeze parameters
+        freeze_model(self.image_encoder)
+        freeze_model(self.text_encoder)
+
+        self.image_encoder.eval()
+        self.text_encoder.eval()
 
         for i, d in enumerate(self.discriminators):
             d.load_state_dict(weights['discriminator'][i])
@@ -168,4 +175,3 @@ if __name__ == '__main__':
         device=DEV
     )
     print(model)
-
