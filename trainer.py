@@ -219,6 +219,22 @@ class Text2ImgTrainer:
                 # for p, avg_p in zip(self.model.generator.parameters(), self.avg_snapshot_generator):
                 #    avg_p.mul_(0.999).add_(0.001, p.data)
 
+                # Track generator gradients
+                top, bottom = get_top_bottom_mean_grad(
+                    self.model.generator.parameters()
+                )
+                self.writer.add_scalars(
+                    'grad/G', {'top': top, 'bottom': bottom}, gen_iterations
+                )
+                # Track discriminators gradients
+                for i in range(len(self.model.discriminators)):
+                    top, bottom = get_top_bottom_mean_grad(
+                        self.model.discriminators[i].parameters()
+                    )
+                    self.writer.add_scalars(
+                        'grad/D%d'%(i), {'top': top, 'bottom': bottom}, gen_iterations
+                    )
+
                 if gen_iterations % args.log_every == 0:
                     # Mean losses
                     D_losses /= args.log_every

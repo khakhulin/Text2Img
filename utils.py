@@ -103,3 +103,14 @@ def set_requires_grad_value(models_list, require_grad):
     for i in range(len(models_list)):
         for p in models_list[i].parameters():
             p.requires_grad = require_grad
+
+
+def get_top_bottom_mean_grad(params):
+    # First  layer
+    mean_grad_first = next(params).grad.mean().item()
+    # Last layer
+    for p in params:
+        pass
+    mean_grad_last = p.grad.mean().item()
+
+    return mean_grad_first, mean_grad_last
