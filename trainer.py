@@ -177,7 +177,8 @@ class Text2ImgTrainer:
                         fake_images[i],
                         sentence_embedding,
                         real_labels,
-                        fake_labels
+                        fake_labels,
+                        loss_type=args.loss_type
                     )
                     # backward and update parameters
                     d_loss.backward()
@@ -306,7 +307,7 @@ if __name__ == '__main__':
     cur_time = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     run_name = os.path.join(args.exp_name, cur_time)
     trainer = Text2ImgTrainer(
-        data_path='dataset/CUB_200_2011', batch_size=args.batch_size,
+        data_path='datasets/CUB_200_2011', batch_size=args.batch_size,
         #continue_from='trained_models/26:05:2019:00-28-38/weights002.pt',
         device=torch.device('cuda'), args=args)
     trainer.train(run_name, epochs=args.max_epoch)

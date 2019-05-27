@@ -38,6 +38,7 @@ def init_config():
     parser.add_argument('--embd_size', default=256, type=int, help='size of embedding vectors in gcn')
     parser.add_argument('--text_enc_emb_size', default=128, type=int, help='size of embedding vectors in text encoder')
     parser.add_argument('--encoder_type', default='lstm', type=str, help='type of the text encoder')
+    parser.add_argument('--loss_type', default='ls_gan', type=str, help='type of the text encoder')
     parser.add_argument('--is_bert', default=False, action='store_true')
     # DAMSM
     parser.add_argument('--gamma1', default=4.0, type=float, help='')
