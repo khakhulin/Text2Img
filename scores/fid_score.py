@@ -49,25 +49,9 @@ except ImportError:
     # If not tqdm is not available, provide a mock version of it
     def tqdm(x): return x
 
-from inception import InceptionV3
+from .inception import InceptionV3
 
-parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-parser.add_argument('path', type=str, nargs=2,
-                    help=('Path to the generated images or '
-                          'to .npz statistic files'))
-parser.add_argument('--batch-size', type=int, default=1,
-                    help='Batch size to use')
-
-parser.add_argument('--dims', type=int, default=2048,
-                    choices=list(InceptionV3.BLOCK_INDEX_BY_DIM),
-                    help=('Dimensionality of Inception features to use. '
-                          'By default, uses pool3 features'))
-
-parser.add_argument('--single-mode', type=bool, default=False,
-                    help='Allows to evaluate statistics for one path')
-
-parser.add_argument('-c', '--gpu', default='', type=str,
-                    help='GPU to use (leave blank for CPU only)')
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
 def remove_one_channel_img(files_list):
@@ -83,6 +67,7 @@ def remove_one_channel_img(files_list):
         idx += 1
 
     return files
+
 
 def get_activations(files_list, model, batch_size=50, dims=2048,
                     cuda=False, verbose=False):
@@ -264,6 +249,40 @@ def _compute_statistics_of_path(path, model, batch_size, dims, cuda):
     return m, s
 
 
+def compute_statistics(imgs, model, batch_size, cuda, dims):
+    model.eval()
+
+    n_batches = len(imgs) // batch_size
+    n_used_imgs = n_batches * batch_size
+    pred_arr = np.empty((n_used_imgs, dims))
+
+    for i in tqdm(range(n_batches)):
+
+        start = i * batch_size
+        end = start + batch_size
+
+        images = imgs[start:end]
+
+        # Reshape to (n_images, 3, height, width)
+        images = images.numpy().transpose((0, 3, 1, 2))
+        images /= 255
+
+        batch = torch.from_numpy(images).type(torch.FloatTensor)
+        if cuda:
+            batch = batch.cuda()
+
+        pred = model(batch)[0]
+
+        # If model output is not scalar, apply global spatial average pooling.
+        # This happens if you choose a dimensionality not equal 2048.
+        if pred.shape[2] != 1 or pred.shape[3] != 1:
+            pred = adaptive_avg_pool2d(pred, output_size=(1, 1))
+
+        pred_arr[start:end] = pred.cpu().data.numpy().reshape(batch_size, -1)
+
+    return np.mean(pred_arr, axis=0), np.cov(pred_arr, rowvar=False)
+
+
 def calculate_fid_given_paths(paths, batch_size, cuda, dims):
     """Calculates the FID of two paths"""
     for p in paths:
@@ -285,7 +304,40 @@ def calculate_fid_given_paths(paths, batch_size, cuda, dims):
     return fid_value
 
 
+def fid_score(imgs1, imgs2, batch_size, cuda, dims):
+    block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[dims]
+
+    model = InceptionV3([block_idx])
+    if cuda:
+        model.cuda()
+
+    m1, s1 = compute_statistics(imgs1, model, batch_size, cuda, dims)
+    m2, s2 = compute_statistics(imgs2, model, batch_size, cuda, dims)
+
+    fid_value = calculate_frechet_distance(m1, s1, m2, s2)
+
+    return fid_value
+
+
 if __name__ == '__main__':
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+    parser.add_argument('path', type=str, nargs=2,
+                        help=('Path to the generated images or '
+                              'to .npz statistic files'))
+    parser.add_argument('--batch-size', type=int, default=1,
+                        help='Batch size to use')
+
+    parser.add_argument('--dims', type=int, default=2048,
+                        choices=list(InceptionV3.BLOCK_INDEX_BY_DIM),
+                        help=('Dimensionality of Inception features to use. '
+                              'By default, uses pool3 features'))
+
+    parser.add_argument('--single-mode', type=bool, default=False,
+                        help='Allows to evaluate statistics for one path')
+
+    parser.add_argument('-c', '--gpu', default='', type=str,
+                        help='GPU to use (leave blank for CPU only)')
+
     args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 

@@ -14,6 +14,8 @@ import os
 from PIL import Image
 from torchvision import transforms
 
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+
 
 def collate(batch):
 	elem_type = type(batch[0])
