@@ -1,13 +1,14 @@
 import torch
 import torch.nn as nn
+
 from DAMSM import ImageEncoder, TextEncoder, BertEncoder
-from models import (
+from modules.models import (
     Discriminator64,
     Discriminator128,
     Discriminator256,
     Generator
 )
-from utils import init_weight, copy_params, freeze_model
+from utils import init_weight, freeze_model
 
 
 class Text2ImgModel(nn.Module):

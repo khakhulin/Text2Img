@@ -1,19 +1,20 @@
 from nn_utils import *
 from utils import *
 from global_attention import GlobalAttentionGeneral
+from torch.nn.utils import spectral_norm as SpectralNorm
+from modules.self_attention import SelfAttn
 
 
 class ResBlock(nn.Module):
-    def __init__(self, channel_num):
+    def __init__(self, channel_num, is_spectral=False):
         super(ResBlock, self).__init__()
         self.block = nn.Sequential(
-            conv3x3(channel_num, channel_num * 2),
+            conv3x3(channel_num, channel_num * 2, is_spectral),
             nn.BatchNorm2d(channel_num * 2),
             nn.GLU(dim=1),
-            conv3x3(channel_num, channel_num),
+            conv3x3(channel_num, channel_num, is_spectral),
             nn.BatchNorm2d(channel_num),
         )
-
 
     def forward(self, x):
         residual = x
@@ -28,14 +29,14 @@ class Discriminator(nn.Module):
     and uncoditioned setting.
     Return probability of the real/fake image
     """
-    def __init__(self, ndf, encoder_dim, condition=False):
+    def __init__(self, ndf, encoder_dim, condition=False, is_spectral=False):
         super(Discriminator, self).__init__()
         self.df_dim = ndf
         self.encoder_dim = encoder_dim
         self.condition = condition
         if self.condition:
             # to eliminate condition part
-            self.conv_embedder = LeakyConv3x3(ndf * 8 + encoder_dim, ndf * 8)
+            self.conv_embedder = LeakyConv3x3(ndf * 8 + encoder_dim, ndf * 8, is_spectral=is_spectral)
 
         self.logits = nn.Sequential(
             nn.Conv2d(ndf * 8, 1, kernel_size=4, stride=4),
@@ -87,7 +88,7 @@ class ConditionNoise(nn.Module):
 
 
 class UpGenMode(nn.Module):
-    def __init__(self, ngf, z_dim, ncf):
+    def __init__(self, ngf, z_dim, ncf, is_sagan=False):
         super(UpGenMode, self).__init__()
         self.gf_dim = ngf
         self.in_dim = z_dim + ncf
@@ -97,13 +98,15 @@ class UpGenMode(nn.Module):
             nn.BatchNorm1d(ngf * 4 * 4 * 2),
             nn.GLU()
         )
+        pre_upsample = [UpBlock(ngf, ngf // 2, is_spectral=is_sagan),
+                        UpBlock(ngf // 2, ngf // 4, is_spectral=is_sagan),
+                        UpBlock(ngf // 4, ngf // 8, is_spectral=is_sagan),
+                        ]
+        if is_sagan:
+            pre_upsample.append(SelfAttn(ngf // 8))
 
-        self.upsample = nn.Sequential(
-            UpBlock(ngf, ngf // 2),
-            UpBlock(ngf // 2, ngf // 4),
-            UpBlock(ngf // 4, ngf // 8),
-            UpBlock(ngf // 8, ngf // 16)
-        )
+        pre_upsample.append(UpBlock(ngf // 8, ngf // 16, is_spectral=is_sagan))
+        self.upsample = nn.Sequential(*pre_upsample)
 
     def forward(self, z_code, c_code):
         """
@@ -120,11 +123,11 @@ class UpGenMode(nn.Module):
 
 
 class ImageGenMod(nn.Module):
-    def __init__(self, ngf):
+    def __init__(self, ngf, is_spectral=False):
         super(ImageGenMod, self).__init__()
         self.gf_dim = ngf
         self.img = nn.Sequential(
-            conv3x3(ngf, 3),
+            conv3x3(ngf, 3, is_spectral),
             nn.Tanh()
         )
 
@@ -134,41 +137,51 @@ class ImageGenMod(nn.Module):
 
 
 class AttentionGenerator(nn.Module):
-    def __init__(self, ngf, nef, cond_dim, num_res_block):
+    def __init__(self, ngf, nef, cond_dim, num_res_block, use_sagan=False):
         super(AttentionGenerator, self).__init__()
         self.gf_dim = ngf
         self.encoder_dim = nef
         self.cf_dim = cond_dim
         self.num_residual = num_res_block
-        layers = [ResBlock(ngf * 2) for _ in range(self.num_residual)]
+        layers = [ResBlock(ngf * 2, is_spectral=use_sagan) for _ in range(self.num_residual)]
         self.res_net = nn.Sequential(*layers)
+        self.use_sagan = use_sagan
+        if self.use_sagan:
+            self.self_attn = SelfAttn(ngf * 2)
+
         self.att = GlobalAttentionGeneral(ngf, self.encoder_dim)
-        self.upsample = UpBlock(ngf * 2, ngf)
+        self.upsample = UpBlock(ngf * 2, ngf, is_spectral=use_sagan)
 
     def forward(self, h_code, c_code, word_embs, mask):
         self.att.applyMask(mask)
         c_code, att = self.att(h_code, word_embs.permute(0,2,1))
         h_c_code = torch.cat((h_code, c_code), 1)
         out_code = self.res_net(h_c_code)
+        if self.use_self_attn:
+            out_code = self.self_attn(out_code)
         # state size ngf/2 x 2in_size x 2in_size
         out_code = self.upsample(out_code)
         return out_code, att
 
 
 class Generator(nn.Module):
-    def __init__(self, ngf, emb_dim, ncf, branch_num, device, z_dim, num_res_block=2):
+    def __init__(self, ngf, emb_dim, ncf, branch_num, device, z_dim, num_res_block=2, is_sagan=False):
         super(Generator, self).__init__()
         self.ca_net = ConditionNoise(emb_dim, ncf, device)
         self.branch_num = branch_num
         if branch_num > 0:
-            self.h_net1 = UpGenMode(ngf=ngf * 16, z_dim=z_dim, ncf=ncf)
-            self.img_net1 = ImageGenMod(ngf)
+            self.h_net1 = UpGenMode(ngf=ngf * 16, z_dim=z_dim, ncf=ncf, is_sagan=is_sagan)
+            self.img_net1 = ImageGenMod(ngf,is_spectral=is_sagan)
         if branch_num > 1:
-            self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
-            self.img_net2 = ImageGenMod(ngf=ngf)
+            if is_sagan:
+                self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
+            else:
+                self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf,
+                                                 num_res_block=num_res_block, use_sagan=True)
+            self.img_net2 = ImageGenMod(ngf=ngf, is_spectral=is_sagan)
         if branch_num > 2:
             self.h_net3 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
-            self.img_net3 = ImageGenMod(ngf=ngf)
+            self.img_net3 = ImageGenMod(ngf=ngf, is_spectral=is_sagan)
 
     def forward(self, z_code, sent_emb, word_embs, mask):
         """
@@ -205,12 +218,16 @@ class Generator(nn.Module):
 
 
 class Discriminator64(nn.Module):
-    def __init__(self, dim, embd_dim, uncondition=True):
+    def __init__(self, dim, embd_dim, uncondition=True, is_spectral=False):
         super(Discriminator64, self).__init__()
         self.ndf = dim
         self.embd_dim = embd_dim
         self.condition = uncondition
-        self.img_code_s16_func = Downsample16(dim)
+        if is_spectral:
+            self.img_code_s16_func = SDownsample16(dim)
+        else:
+            self.img_code_s16_func = Downsample16(dim)
+
         self.uncond_discriminator = Discriminator(dim, embd_dim, condition=False)
 
         self.cond_discriminator = Discriminator(dim, embd_dim, condition=True)
@@ -222,10 +239,14 @@ class Discriminator64(nn.Module):
 
 
 class Discriminator128(Discriminator64):
-    def __init__(self, ndf, embd_dim, condition=False):
-        super(Discriminator128, self).__init__(ndf, embd_dim, condition)
-        self.img_code_s32_1 = LeakyConv(ndf * 8, ndf * 16, 4, 2, 1)
-        self.img_code_s32_2 = LeakyConv3x3(ndf * 16, ndf * 8)
+    def __init__(self, ndf, embd_dim, condition=False, is_spectral=False):
+        super(Discriminator128, self).__init__(ndf, embd_dim, condition, is_spectral)
+        if  is_spectral:
+            self.img_code_s32_1 = SpectralLeakyConv(ndf * 8, ndf * 16, 4, 2, 1)
+            self.img_code_s32_2 = LeakyConv3x3(ndf * 16, ndf * 8, is_spectral=is_spectral)
+        else:
+            self.img_code_s32_1 = LeakyConv(ndf * 8, ndf * 16, 4, 2, 1)
+            self.img_code_s32_2 = LeakyConv3x3(ndf * 16, ndf * 8)
 
     def forward(self, x_var):
         # 8 x 8 x 8df -> 4 x 4 x 16df -> 4 x 4 x 8df
@@ -236,14 +257,15 @@ class Discriminator128(Discriminator64):
 
 
 class Discriminator256(Discriminator128):
-    def __init__(self, ndf, embd_dim, condition=False):
-        super(Discriminator256, self).__init__(ndf, embd_dim, condition)
+    def __init__(self, ndf, embd_dim, condition=False, is_spectral=False):
+        super(Discriminator256, self).__init__(ndf, embd_dim, condition, is_spectral)
         self.image_code = nn.Sequential(
             self.img_code_s16_func,
             self.img_code_s32_1,
-            LeakyConv(ndf * 16, ndf * 32, 4, 2, 1),
-            LeakyConv3x3(ndf * 32, ndf * 16),
-            LeakyConv3x3(ndf * 16, ndf * 8),
+            LeakyConv(ndf * 16, ndf * 32, 4, 2, 1) if not is_spectral
+                        else SpectralLeakyConv(ndf * 16, ndf * 32, 4, 2, 1),
+            LeakyConv3x3(ndf * 32, ndf * 16, is_spectral=is_spectral),
+            LeakyConv3x3(ndf * 16, ndf * 8, is_spectral=is_spectral),
         )
 
     def forward(self, x_var):
@@ -252,7 +274,7 @@ class Discriminator256(Discriminator128):
 
 
 if __name__ == '__main__':
-    print(Discriminator256(10, 64).cond_discriminator)
+    print(Discriminator256(10, 64, is_spectral=True).cond_discriminator)
     ngf, nef, ncf, branch_num = 32, 256, 100, 3
     z_dim = 100
-    print(Generator(ngf, nef, ncf, branch_num, z_dim=z_dim, num_res_block=2, device=torch.device('cpu')))
+    print(Generator(ngf, nef, ncf, branch_num, z_dim=z_dim, num_res_block=2, device=torch.device('cpu'), is_sagan=True))
