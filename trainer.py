@@ -26,29 +26,30 @@ from scores.prd_score import prd_score, get_plot_as_numpy
 
 class Text2ImgTrainer:
     def __init__(self, batch_size=20, data_path='datasets/CUB_200_2011', continue_from=None,
-                 device=torch.device('cuda:2'), args=None):
+                 device=torch.device('cuda'), args=None):
         self.device = device
         self.writer = SummaryWriter()
         self.batch_size = batch_size
-        self.args = args #  TODO find better way to use arguments
+        self.args = args  # TODO find better way to use arguments
         self.dataset = self.build_dataset(data_path)
         self.data_loader = DataLoader(
             dataset=self.dataset,
             batch_size=self.batch_size, drop_last=True
         )
-        self.loss_logger = Logger(['Epoch'] +
-            ['D_loss_%d' % (i) for i in range(args.branch_num)] +
-            ['G_loss_%d' % (i) for i in range(args.branch_num)] +
+        self.loss_logger = Logger(
+            ['Epoch'] +
+            ['D_loss_%d' % i for i in range(args.branch_num)] +
+            ['G_loss_%d' % i for i in range(args.branch_num)] +
             ['S_loss', 'W_loss', 'KL_loss']
         )
         self.path_to_data = data_path
         self.is_bert = self.args.is_bert
-        self.model = self.build_model(
+        self.model = Text2ImgModel(
             embedding_dim=args.embd_size,
             n_tokens=self.dataset.n_tokens,
-            text_encoder_embd_size=args.text_enc_emb_size, # not used in bert
-            pretrained_text_encoder_path='trained_models/best_text_encoder.pt',
-            pretrained_image_encoder_path='trained_models/best_image_encoder.pt',
+            text_encoder_embd_size=args.text_enc_emb_size,  # not used in bert
+            pretrained_text_encoder_path=args.text_encoder_path,
+            pretrained_image_encoder_path=args.image_encoder_path,
             pretrained_generator_path='',
             branch_num=args.branch_num,
             num_generator_filters=32,
@@ -58,9 +59,9 @@ class Text2ImgTrainer:
             is_bert_encoder=self.is_bert,
             device=self.device
         )
-        
+
         self.start = 0
-        if not continue_from is None and os.path.exists(continue_from):
+        if continue_from is not None and os.path.exists(continue_from):
             print('Start from checkpoint')
             self.start = self.model.load_model_ckpt(continue_from)
 
@@ -72,10 +73,6 @@ class Text2ImgTrainer:
             )
 
         self.avg_snapshot_generator = copy_params(self.model.generator)
-
-    @staticmethod
-    def build_model(**kwargs):
-        return Text2ImgModel(**kwargs)
 
     @staticmethod
     def build_dataset(path_to_data):
@@ -138,7 +135,7 @@ class Text2ImgTrainer:
 
         # batch_passed = 0
         gen_iterations = self.start
-        
+
         for epoch in range(epochs):
             print('Epoch %04d' % (epoch))
             # step = 0
@@ -271,7 +268,7 @@ class Text2ImgTrainer:
                             val_noise,
                             val_mask
                         )
-                    
+
                     # load_params(self.model.generator, backup_params)
                     # TODO do not replace images
                     img_tensor = save_images(gen_imgs[-1], None, log_dir, 'vgen_imgs')
@@ -301,13 +298,14 @@ class Text2ImgTrainer:
                     )
         self.writer.close()
 
+
 if __name__ == '__main__':
-    assert torch.__version__== '1.1.0'
+    assert torch.__version__ == '1.1.0'
     args = init_config()
     cur_time = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     run_name = os.path.join(args.exp_name, cur_time)
     trainer = Text2ImgTrainer(
         data_path='datasets/CUB_200_2011', batch_size=args.batch_size,
-        #continue_from='trained_models/26:05:2019:00-28-38/weights002.pt',
-        device=torch.device('cuda'), args=args)
+        # continue_from='trained_models/26:05:2019:00-28-38/weights002.pt',
+        device=torch.device(f'cuda:{args.cuda_device}'), args=args)
     trainer.train(run_name, epochs=args.max_epoch)

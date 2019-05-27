@@ -16,7 +16,8 @@ def init_config():
     parser.add_argument('--resume_path', default=None, type=str, help='path to the weights of experiment')
     parser.add_argument('--gen_path', default=None, type=str, help='path to the weights of experiment')
     parser.add_argument('--disc_path', default=None, type=str, help='path to the weights of experiment')
-    parser.add_argument('--encoder_path', default=None, type=str, help='path to the weights of experiment')
+    parser.add_argument('--text_encoder_path', default=None, type=str, help='path to the weights of experiment')
+    parser.add_argument('--image_encoder_path', default=None, type=str, help='path to the weights of experiment')
 
     parser.add_argument('--save_path', default='./models_backup/exp1', type=str, help='path to save models')
     parser.add_argument('--datasets', default='birds', type=str, help='type of the dataset')
