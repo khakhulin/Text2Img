@@ -334,6 +334,6 @@ if __name__ == '__main__':
     cur_time = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     run_name = os.path.join(args.exp_name, cur_time)
     trainer = Text2ImgTrainer(
-        data_path='dataset/CUB_200_2011', batch_size=args.batch_size, args=args
+        data_path=args.data_path, batch_size=args.batch_size, args=args
     )
     trainer.train(run_name, epochs=args.max_epoch)
