@@ -20,6 +20,7 @@ from utils import *
 from logger import Logger
 
 from scores.inception_score import inception_score
+from scores.inception_score import GenImgData
 from scores.fid_score import fid_score
 from scores.prd_score import prd_score, get_plot_as_numpy
 
@@ -288,9 +289,6 @@ class Text2ImgTrainer:
                             img_tensor, gen_iterations
                         )
 
-                    #val_inception_score = inception_score(gen_imgs, batch_size=4)
-                    #self.writer.add_scalar('metrics/inception', val_inception_score, epoch)
-
                     #val_fid_score = fid_score(gen_imgs, val_img, batch_size=4, cuda=self.device, dims=2048)
                     #self.writer.add_scalar('metrics/fid', val_fid_score, epoch)
 
@@ -305,6 +303,12 @@ class Text2ImgTrainer:
                         gen_iterations,
                         os.path.join(save_dir, 'weights%05d.pt' % (gen_iterations))
                     )
+
+            gen_save_folder = os.path.join(log_dir, 'images', 'iter'+str(gen_iterations), str(256))
+            gen_img_iterator = GenImgData(gen_save_folder)
+            val_inception_score = inception_score(gen_img_iterator, batch_size=1)
+            self.writer.add_scalar('metrics/inception', val_inception_score[0], epoch)
+
         self.writer.close()
 
 if __name__ == '__main__':
