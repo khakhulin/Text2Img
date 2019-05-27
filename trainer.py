@@ -304,10 +304,11 @@ class Text2ImgTrainer:
                         os.path.join(save_dir, 'weights%05d.pt' % (gen_iterations))
                     )
 
-            gen_save_folder = os.path.join(log_dir, 'images', 'iter'+str(gen_iterations), str(256))
-            gen_img_iterator = GenImgData(gen_save_folder)
-            val_inception_score = inception_score(gen_img_iterator, batch_size=1)
-            self.writer.add_scalar('metrics/inception', val_inception_score[0], epoch)
+            if (args.inception_score_on_validation):
+                gen_save_folder = os.path.join(log_dir, 'images', 'iter'+str(gen_iterations), str(256))
+                gen_img_iterator = GenImgData(gen_save_folder)
+                val_inception_score = inception_score(gen_img_iterator, batch_size=1)
+                self.writer.add_scalar('metrics/inception', val_inception_score[0], epoch)
 
         self.writer.close()
 
