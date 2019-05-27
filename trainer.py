@@ -143,15 +143,15 @@ class Text2ImgTrainer:
 
         # batch_passed = 0
         gen_iterations = self.start
+        D_losses = np.zeros((len(self.model.discriminators),))
+        G_losses = np.zeros((len(self.model.discriminators),))
+        W_loss = 0.0
+        S_loss = 0.0
+        KLD_loss = 0.0
         
         for epoch in range(epochs):
-            print('Epoch %04d' % (epoch))
+            print('Epoch %03d' % (epoch))
             # step = 0
-            D_losses = np.zeros((len(self.model.discriminators),))
-            G_losses = np.zeros((len(self.model.discriminators),))
-            W_loss = 0.0
-            S_loss = 0.0
-            KLD_loss = 0.0
 
             for data in tqdm.tqdm(self.data_loader, total=len(self.data_loader)):
                 set_requires_grad_value(self.model.discriminators, True)
