@@ -19,6 +19,10 @@ from text2img_model import Text2ImgModel
 from utils import *
 from logger import Logger
 
+from scores.inception_score import inception_score
+from scores.fid_score import fid_score
+from scores.prd_score import prd_score, get_plot_as_numpy
+
 
 class Text2ImgTrainer:
     def __init__(self, batch_size=20, data_path='datasets/CUB_200_2011', continue_from=None,
@@ -272,6 +276,20 @@ class Text2ImgTrainer:
                     img_tensor = save_images(gen_imgs[-1], None, log_dir, 'vgen_imgs')
                     img_tensor = make_grid(img_tensor, nrow=n_images, padding=5)
                     self.writer.add_image('images', img_tensor, gen_iterations)
+
+                    img_tensor = save_images(gen_imgs[-1], None, log_dir, 'vgen_imgs')
+                    img_tensor = make_grid(img_tensor, nrow=n_images, padding=5)
+                    self.writer.add_image('images', img_tensor, epoch)
+
+                    val_inception_score = inception_score(gen_imgs, batch_size=4)
+                    self.writer.add_scalar('metrics/inception', val_inception_score, epoch)
+
+                    val_fid_score = fid_score(gen_imgs, val_img, batch_size=4, cuda=self.device, dims=2048)
+                    self.writer.add_scalar('metrics/fid', val_fid_score, epoch)
+
+                    precision, recall = prd_score(val_img, gen_imgs)
+                    pr_plot = get_plot_as_numpy(precision, recall)
+                    self.writer.add_image('metrics/prd_score', pr_plot, epoch)
 
                     self.model.train()
                 # make a snapshot
