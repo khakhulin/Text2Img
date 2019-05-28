@@ -11,7 +11,8 @@ import torchvision.transforms as transforms
 
 from arguments import init_config
 from custom_inception_v3 import custom_inception_v3
-from data_utils import BirdsPreprocessor, BirdsDataset, CaptionTokenizer, BertCaptionTokenizer, prepare_data
+from data_utils import BirdsPreprocessor, BirdsDataset, CaptionTokenizer, BertCaptionTokenizer, prepare_data, \
+    CocoPreprocessor, CocoDataset
 from modules.losses import sent_loss, words_loss
 from utils import freeze_model
 
@@ -270,9 +271,13 @@ if __name__ == '__main__':
     args = init_config()
     run_name = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     # Load data (Birds)
-    preproc = BirdsPreprocessor(data_path=args.data_path,
-        dataset_name='cub'
-    )
+    if args.datasets == 'birds':
+        preproc = BirdsPreprocessor(data_path=args.data_path,
+            dataset_name='cub'
+        )
+    else:
+        preproc = CocoPreprocessor(data_path=args.data_path, dataset_name='coco')
+
     if args.is_bert:
         tokenizer = BertCaptionTokenizer(word_to_idx=preproc.word_to_idx)
     else:
@@ -286,16 +291,27 @@ if __name__ == '__main__':
         transforms.CenterCrop(imsize),
         transforms.RandomHorizontalFlip()
     ])
-
-    train_data = BirdsDataset(
-        mode='train', tokenizer=tokenizer,
-        preprocessor=preproc, base_size=imsize, branch_num=1,
-        transform=image_transform
-    )
-    val_data = BirdsDataset(
-        mode='val', tokenizer=tokenizer,
-        preprocessor=preproc, base_size=imsize, branch_num=1
-    )
+    if args.datasets == 'birds':
+        train_data = BirdsDataset(
+            mode='train', tokenizer=tokenizer,
+            preprocessor=preproc, base_size=imsize, branch_num=1,
+            transform=image_transform
+        )
+        val_data = BirdsDataset(
+            mode='val', tokenizer=tokenizer,
+            preprocessor=preproc, base_size=imsize, branch_num=1
+        )
+    else:
+        train_data = CocoDataset(
+            mode='train', tokenizer=tokenizer,
+            preprocessor=preproc, base_size=imsize, branch_num=1,
+            transform=image_transform
+        )
+        val_data = CocoDataset(
+            mode='val', tokenizer=tokenizer,
+            preprocessor=preproc, base_size=imsize, branch_num=1
+        )
+        
     train_loader = torch.utils.data.DataLoader(
         dataset=train_data, drop_last=True,
         batch_size=args.damsm_batch_size,
