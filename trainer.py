@@ -35,7 +35,7 @@ class Text2ImgTrainer:
         self.writer = SummaryWriter()
         self.batch_size = batch_size
         self.args = args #  TODO find better way to use arguments
-        self.dataset = self.build_dataset(data_path)
+        self.dataset = self.build_dataset(data_path, args)
         self.data_loader = DataLoader(
             dataset=self.dataset,
             batch_size=self.batch_size,
@@ -83,12 +83,18 @@ class Text2ImgTrainer:
         return Text2ImgModel(**kwargs)
 
     @staticmethod
-    def build_dataset(path_to_data):
+    def build_dataset(path_to_data, args):
         preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
         tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
-        dataset = BirdsDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
+        dataset = BirdsDataset(
+            mode='train',
+            tokenizer=tokenizer,
+            preprocessor=preproc,
+            branch_num=args.branch_num,
+            base_size=args.base_size
+        )
         image, _, _ = dataset[0]
-        assert image[0].size() == torch.Size([3, 64, 64])
+        assert image[0].size() == torch.Size([3, args.base_size, args.base_size])
         return dataset
 
     @staticmethod

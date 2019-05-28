@@ -45,6 +45,8 @@ def init_config():
     parser.add_argument('--encoder_type', default='lstm', type=str, help='type of the text encoder')
     parser.add_argument('--loss_type', default='ls_gan', type=str, help='type of the text encoder')
     parser.add_argument('--is_bert', default=False, action='store_true')
+    parser.add_argument('--base_size', default=64, type=int)
+
     # DAMSM
     parser.add_argument('--gamma1', default=4.0, type=float, help='')
     parser.add_argument('--gamma2', default=5.0, type=float, help='')

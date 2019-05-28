@@ -38,14 +38,14 @@ class Discriminator(nn.Module):
             self.conv_embedder = LeakyConv3x3(ndf * 8 + encoder_dim, ndf * 8)
 
         self.logits = nn.Sequential(
-            nn.Conv2d(ndf * 8, 1, kernel_size=4, stride=4),
+            nn.Conv2d(ndf * 8, 1, kernel_size=2, stride=2),
             nn.Sigmoid())
 
     def forward(self, h_code, c_code=None):
         if self.condition and c_code is not None:
             # conditioning output
             c_code = c_code.view(-1, self.encoder_dim, 1, 1)
-            c_code = c_code.repeat(1, 1, 4, 4)
+            c_code = c_code.repeat(1, 1, 2, 2)
             # (ngf+egf) x 4 x 4
             h_c_code = torch.cat((h_code, c_code), 1)
             # ngf x in_size x in_size
@@ -93,8 +93,8 @@ class UpGenMode(nn.Module):
         self.in_dim = z_dim + ncf
         nz, ngf = self.in_dim, self.gf_dim
         self.fc = nn.Sequential(
-            nn.Linear(nz, ngf * 4 * 4 * 2, bias=False),
-            nn.BatchNorm1d(ngf * 4 * 4 * 2),
+            nn.Linear(nz, ngf * 2 * 2 * 2, bias=False),
+            nn.BatchNorm1d(ngf * 2 * 2 * 2),
             nn.GLU()
         )
 
@@ -114,7 +114,7 @@ class UpGenMode(nn.Module):
         #  ngf x 4 x 4 ->
         c_z_code = torch.cat((c_code, z_code), 1)
         out_code = self.fc(c_z_code)
-        out_code = out_code.view(-1, self.gf_dim, 4, 4)
+        out_code = out_code.view(-1, self.gf_dim, 2, 2)
         out_code = self.upsample(out_code)
         return out_code
 
