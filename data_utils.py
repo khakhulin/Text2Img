@@ -210,16 +210,28 @@ class BertCaptionTokenizer(BaseTokenizer):
 def prepare_data(data, device, class_ids=None, is_damsm=False):
     imgs, captions, caption_lengths = data
 
+    # Sort data by the length in a decreasing order
+    caption_lengths, sorted_idx = \
+        torch.sort(caption_lengths, 0, True)
+    
+    for i in range(len(imgs)):
+        imgs[i] = imgs[i][sorted_idx]
+    
+    captions = captions[sorted_idx]
+
     real_imgs = []
+
     if not is_damsm:
         for i in range(len(imgs)):
             real_imgs.append(imgs[i].to(device))
     else:
         real_imgs = imgs[-1].to(device)
+    
     max_len = MAX_SEQ_LEN
     # captions = captions[:, :max_len]
     captions = captions.squeeze()
     captions = captions.to(device)
+
     if class_ids:
         class_ids = class_ids.numpy()
 
@@ -243,7 +255,7 @@ def get_imgs(img_path, imsize, branch_num, transform=None):
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     )  # TODO: appropriate normalization
-    img = Image.open(img_path).convert('RGB')  # default for PIL is BGR
+    img = Image.open(img_path).convert('RGB') # default for PIL is BGR
 
     if transform is not None:
         img = transform(img)
@@ -258,7 +270,8 @@ def get_imgs(img_path, imsize, branch_num, transform=None):
 
 
 class BirdsDataset(Dataset):
-    def __init__(self, mode='test', tokenizer=None, preprocessor=None, base_size=64, branch_num=3):
+    def __init__(self, mode='test', tokenizer=None, preprocessor=None,
+                 base_size=64, branch_num=3, transform=None):
         """
         :param mode: train/test/val
         :param tokenizer: object which can tokenize caption
@@ -268,6 +281,7 @@ class BirdsDataset(Dataset):
         """
         super(BirdsDataset, self).__init__()
         self.mode = mode
+        self.transform = transform
         self.max_caption_size = MAX_SEQ_LEN
         if preprocessor is None:
             self.preprocessor = BirdsPreprocessor(data_path='dataset/CUB_200_2011', dataset_name='cub')
@@ -293,7 +307,7 @@ class BirdsDataset(Dataset):
         :return: Tuple: lis image (branch_num x [CxWxH]), caption (max_seq len), caption_length (int)
         """
         image_name = os.path.join(self.preprocessor.data_path, self.img_file_names[idx])
-        image = get_imgs(image_name, self.imsize, branch_num=self.branch_num)
+        image = get_imgs(image_name, self.imsize, branch_num=self.branch_num, transform=self.transform)
         # select a random sentence
         cap_idx = np.random.choice(np.arange(len(self.img_captions[idx])))
         caption, caption_length = self.tokenizer.get_padded_tensor(self.img_captions[idx][cap_idx])
