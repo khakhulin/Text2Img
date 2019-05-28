@@ -11,6 +11,8 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
+from torchvision.datasets.coco import CocoCaptions
+from pycocotools.coco import COCO
 
 try:
     from pytorch_pretrained_bert import BertTokenizer
@@ -232,7 +234,7 @@ def prepare_data(data, device, class_ids=None, is_damsm=False):
     return (real_imgs, captions, caption_lengths, input_mask)
 
 
-def get_imgs(img_path, imsize, branch_num, transform=None):
+def get_imgs(img_path, imsize, branch_num, transform=None, img=None):
     """
     :param img_path:
     :param imsize: list of the size
@@ -243,7 +245,8 @@ def get_imgs(img_path, imsize, branch_num, transform=None):
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     )  # TODO: appropriate normalization
-    img = Image.open(img_path).convert('RGB')  # default for PIL is BGR
+    if img is None:
+        img = Image.open(img_path).convert('RGB') # default for PIL is BGR
 
     if transform is not None:
         img = transform(img)
@@ -336,6 +339,146 @@ class BirdsDataset(Dataset):
 
         return output
 
+    
+class CocoPreprocessor(DataPreprocessor):
+    def __init__(self, dataset_name, data_path):
+        super(CocoPreprocessor, self).__init__(data_path=data_path)
+
+        self.data_dir = data_path
+        self.data_path = os.path.join(data_path, "images")
+        self.captions_path = os.path.join(data_path, "annotations")
+        self.processed_data = "data/"
+
+
+        self.vocab_path = self.processed_data + dataset_name + "_vocab.pkl"
+        self.train_test_split_path = self.processed_data + dataset_name + "_data.pkl"
+
+        if not os.path.exists(self.processed_data):
+            os.makedirs(self.processed_data)
+
+        self.vocabs = {"idx_to_word": {}, "word_to_idx": {}}
+
+        if os.path.exists(self.vocab_path ):
+            with open(self.vocab_path, "rb") as bow_file:
+                self.vocabs = pickle.load(bow_file)
+        else:
+            self.vocabs = self.preprocess()
+
+        self.idx_to_word = self.vocabs["idx_to_word"]
+        self.word_to_idx = self.vocabs["word_to_idx"]
+        
+    def preprocess(self):
+        """
+        create vocabulary, tokenize captions with len>0
+        :return: vocab dict
+        """
+        
+        train_annotations = os.path.join(self.captions_path, "captions_train2017.json")
+        coco_ann = COCO(train_annotations)
+
+        all_captions =[]
+        for cap_dict in coco_ann.anns.values():
+            cap = cap_dict['caption']
+            if len(cap) == 0:
+                continue
+            cap = cap.replace(u"\ufffd\ufffd", u" ")
+
+            tokenizer = RegexpTokenizer(r'\w+')
+            tokens = tokenizer.tokenize(cap.lower())
+
+            if len(tokens) == 0:
+                print('cap', cap)
+                continue
+
+            tokens_new = []
+            for t in tokens:
+                t = t.encode('ascii', 'ignore').decode('ascii')
+                if len(t) > 0:
+                    tokens_new.append(t)
+            all_captions.extend(tokens_new)
+
+        vocab = np.unique(all_captions)
+
+        idx_to_word = dict()
+        idx_to_word[0] = '<end>'
+        word_to_idx = dict()
+        word_to_idx['<end>'] = 0
+        idx = 1
+
+        for w in vocab:
+            word_to_idx[w] = idx
+            idx_to_word[idx] = w
+            idx += 1
+
+        vocabs = {"idx_to_word": idx_to_word, "word_to_idx": word_to_idx}
+        with open(self.vocab_path, "wb") as f:
+            pickle.dump(vocabs, f)
+
+        return vocabs
+    
+class CocoDataset(Dataset):
+    def __init__(self, mode='val', tokenizer=None, preprocessor=None,
+                 base_size=64, branch_num=3, transform=None):
+        """
+        :param mode: train/test/val
+        :param tokenizer: object which can tokenize caption
+        :param preprocessor: object with path to train, text, validation and vocabulary
+        :param base_size: size of the image in the 1st stage
+        :param branch_num: number of the stage (default 3)
+        """
+        super(CocoDataset, self).__init__()
+        self.mode = mode
+        self.transform = transform
+        self.max_caption_size = MAX_SEQ_LEN
+        if preprocessor is None:
+            self.preprocessor = CocoPreprocessor(data_path='.', dataset_name='cub')
+        else:
+            self.preprocessor = preprocessor
+            
+        self.raw_dataset = CocoCaptions('coco/images/{}2017/'.format(mode),
+                                        'coco/annotations/captions_{}2017.json'.format(mode))
+        
+        self.branch_num = branch_num
+        self.tokenizer = tokenizer
+        self.n_tokens = len(tokenizer.word_to_idx)
+        self.imsize = []
+
+        for i in range(self.branch_num):
+            self.imsize.append(base_size)
+            base_size = base_size * 2
+
+    def __len__(self):
+        return len(self.raw_dataset)
+
+    def __getitem__(self, idx):
+        """
+        :param idx:
+        :return: Tuple: lis image (branch_num x [CxWxH]), caption (max_seq len), caption_length (int)
+        """
+        raw_image, img_captions = self.raw_dataset[idx]
+        image = get_imgs(None, self.imsize, branch_num=self.branch_num, transform=self.transform, img=raw_image)
+        # select a random sentence
+        cap_idx = np.random.choice(np.arange(len(img_captions)))
+        caption, caption_length = self.tokenizer.get_padded_tensor(img_captions[cap_idx])
+        caption_length = np.array(caption_length)
+
+        return image, caption, caption_length
+    
+    def tensor_to_caption(self, cap_idx):
+        f = lambda x: \
+            " ".join([self.preprocessor.idx_to_word[idx.item()]
+                      for idx in x if idx.item() != 0])
+        output = []
+
+        if cap_idx.dim() == 1:
+            output.append(f(cap_idx))
+        elif cap_idx.dim() == 2:
+            for i in range(cap_idx.size(0)):
+                output.append(f(cap_idx[i]))
+
+        return output
+    
+
 
 if __name__ == '__main__':
     preproc = BirdsPreprocessor(data_path='dataset/CUB_200_2011', dataset_name='cub')
@@ -349,6 +492,23 @@ if __name__ == '__main__':
     print(test_str2, tokenizer.tokenize(test_str))
 
     dataset = BirdsDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=2)
+    image, caption, length = dataset[0]
+    assert image[0].size() == torch.Size([3, 64, 64])
+    data_loader = torch.utils.data.DataLoader(dataset=dataset, batch_size=4)
+    next_batch = next(iter(data_loader))
+    print(len(next_batch))
+    print(len(next_batch[0]))
+    assert next_batch[0][0].size() == torch.Size([4, 3, 64, 64])
+    
+    preproc = CocoPreprocessor(data_path='coco', dataset_name='coco')
+    tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
+    tokenizer = BertCaptionTokenizer(word_to_idx=preproc.word_to_idx)
+    test_str = 'it is the caption'
+    test_str2 = 'это подпись'
+    print(test_str, tokenizer.tokenize(test_str))
+    print(test_str2, tokenizer.tokenize(test_str))
+
+    dataset = CocoDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=2)
     image, caption, length = dataset[0]
     assert image[0].size() == torch.Size([3, 64, 64])
     data_loader = torch.utils.data.DataLoader(dataset=dataset, batch_size=4)
