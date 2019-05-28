@@ -29,24 +29,36 @@ class Discriminator(nn.Module):
     and uncoditioned setting.
     Return probability of the real/fake image
     """
-    def __init__(self, ndf, encoder_dim, condition=False, is_spectral=False):
+    def __init__(self, ndf, encoder_dim, base_size, condition=False, is_spectral=False):
         super(Discriminator, self).__init__()
         self.df_dim = ndf
         self.encoder_dim = encoder_dim
         self.condition = condition
+        self.base_size = base_size
         if self.condition:
             # to eliminate condition part
             self.conv_embedder = LeakyConv3x3(ndf * 8 + encoder_dim, ndf * 8, is_spectral=is_spectral)
 
         self.logits = nn.Sequential(
-            nn.Conv2d(ndf * 8, 1, kernel_size=4, stride=4),
-            nn.Sigmoid())
+            nn.Conv2d(
+                ndf * 8,
+                1,
+                kernel_size=self.base_size // 16,
+                stride=self.base_size // 16
+            ),
+            nn.Sigmoid()
+        )
 
     def forward(self, h_code, c_code=None):
         if self.condition and c_code is not None:
             # conditioning output
             c_code = c_code.view(-1, self.encoder_dim, 1, 1)
-            c_code = c_code.repeat(1, 1, 4, 4)
+            c_code = c_code.repeat(
+                1,
+                1,
+                self.base_size // 16,
+                self.base_size // 16
+            )
             # (ngf+egf) x 4 x 4
             h_c_code = torch.cat((h_code, c_code), 1)
             # ngf x in_size x in_size
@@ -88,14 +100,21 @@ class ConditionNoise(nn.Module):
 
 
 class UpGenMode(nn.Module):
-    def __init__(self, ngf, z_dim, ncf, is_sagan=False):
+    def __init__(self, ngf, z_dim, ncf, base_size, is_sagan=False):
         super(UpGenMode, self).__init__()
         self.gf_dim = ngf
         self.in_dim = z_dim + ncf
+        self.base_size = base_size
         nz, ngf = self.in_dim, self.gf_dim
         self.fc = nn.Sequential(
-            nn.Linear(nz, ngf * 4 * 4 * 2, bias=False),
-            nn.BatchNorm1d(ngf * 4 * 4 * 2),
+            nn.Linear(
+                nz,
+                ngf * self.base_size // 16 * self.base_size // 16 * 2,
+                bias=False
+            ),
+            nn.BatchNorm1d(
+                ngf * self.base_size // 16 * self.base_size // 16 * 2
+            ),
             nn.GLU()
         )
         pre_upsample = [UpBlock(ngf, ngf // 2, is_spectral=is_sagan),
@@ -117,7 +136,12 @@ class UpGenMode(nn.Module):
         #  ngf x 4 x 4 ->
         c_z_code = torch.cat((c_code, z_code), 1)
         out_code = self.fc(c_z_code)
-        out_code = out_code.view(-1, self.gf_dim, 4, 4)
+        out_code = out_code.view(
+            -1,
+            self.gf_dim,
+            self.base_size // 16,
+            self.base_size // 16
+        )
         out_code = self.upsample(out_code)
         return out_code
 
@@ -165,13 +189,13 @@ class AttentionGenerator(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, ngf, emb_dim, ncf, branch_num, device, z_dim, num_res_block=2, is_sagan=False):
+    def __init__(self, ngf, emb_dim, ncf, branch_num, device, z_dim, base_size, num_res_block=2, is_sagan=False):
         super(Generator, self).__init__()
         self.ca_net = ConditionNoise(emb_dim, ncf, device)
         self.branch_num = branch_num
         if branch_num > 0:
-            self.h_net1 = UpGenMode(ngf=ngf * 16, z_dim=z_dim, ncf=ncf, is_sagan=is_sagan)
-            self.img_net1 = ImageGenMod(ngf,is_spectral=is_sagan)
+            self.h_net1 = UpGenMode(ngf=ngf * 16, z_dim=z_dim, ncf=ncf, is_sagan=is_sagan, base_size=base_size)
+            self.img_net1 = ImageGenMod(ngf, is_spectral=is_sagan)
         if branch_num > 1:
             if is_sagan:
                 self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
@@ -218,7 +242,7 @@ class Generator(nn.Module):
 
 
 class Discriminator64(nn.Module):
-    def __init__(self, dim, embd_dim, uncondition=True, is_spectral=False):
+    def __init__(self, dim, embd_dim, base_size, uncondition=True, is_spectral=False):
         super(Discriminator64, self).__init__()
         self.ndf = dim
         self.embd_dim = embd_dim
@@ -228,9 +252,13 @@ class Discriminator64(nn.Module):
         else:
             self.img_code_s16_func = Downsample16(dim)
 
-        self.uncond_discriminator = Discriminator(dim, embd_dim, condition=False)
+        self.uncond_discriminator = Discriminator(
+            dim, embd_dim, condition=False, base_size=base_size
+        )
 
-        self.cond_discriminator = Discriminator(dim, embd_dim, condition=True)
+        self.cond_discriminator = Discriminator(
+            dim, embd_dim, condition=True, base_size=base_size
+        )
 
     def forward(self, x_var):
         # 4 x 4 x 8 df
@@ -239,9 +267,9 @@ class Discriminator64(nn.Module):
 
 
 class Discriminator128(Discriminator64):
-    def __init__(self, ndf, embd_dim, condition=False, is_spectral=False):
-        super(Discriminator128, self).__init__(ndf, embd_dim, condition, is_spectral)
-        if  is_spectral:
+    def __init__(self, ndf, embd_dim, base_size, condition=False, is_spectral=False):
+        super(Discriminator128, self).__init__(ndf, embd_dim, base_size, condition, is_spectral)
+        if is_spectral:
             self.img_code_s32_1 = SpectralLeakyConv(ndf * 8, ndf * 16, 4, 2, 1)
             self.img_code_s32_2 = LeakyConv3x3(ndf * 16, ndf * 8, is_spectral=is_spectral)
         else:
@@ -257,8 +285,8 @@ class Discriminator128(Discriminator64):
 
 
 class Discriminator256(Discriminator128):
-    def __init__(self, ndf, embd_dim, condition=False, is_spectral=False):
-        super(Discriminator256, self).__init__(ndf, embd_dim, condition, is_spectral)
+    def __init__(self, ndf, embd_dim, base_size, condition=False, is_spectral=False):
+        super(Discriminator256, self).__init__(ndf, embd_dim, base_size, condition, is_spectral)
         self.image_code = nn.Sequential(
             self.img_code_s16_func,
             self.img_code_s32_1,
@@ -274,7 +302,11 @@ class Discriminator256(Discriminator128):
 
 
 if __name__ == '__main__':
-    print(Discriminator256(10, 64, is_spectral=True).cond_discriminator)
+    print(Discriminator256(10, 64, base_size=32, is_spectral=True).cond_discriminator)
     ngf, nef, ncf, branch_num = 32, 256, 100, 3
     z_dim = 100
-    print(Generator(ngf, nef, ncf, branch_num, z_dim=z_dim, num_res_block=2, device=torch.device('cpu'), is_sagan=True))
+    print(Generator(
+        ngf, nef, ncf, branch_num,
+        z_dim=z_dim, num_res_block=2, device=torch.device('cpu'),
+        base_size=32, is_sagan=True
+    ))

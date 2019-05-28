@@ -35,7 +35,7 @@ class Text2ImgTrainer:
         self.writer = SummaryWriter()
         self.batch_size = args.batch_size
         self.args = args #  TODO find better way to use arguments
-        self.dataset = self.build_dataset(args.data_path)
+        self.dataset = self.build_dataset(args.data_path, args.base_size)
         self.data_loader = DataLoader(
             dataset=self.dataset,
             batch_size=self.batch_size,
@@ -62,6 +62,7 @@ class Text2ImgTrainer:
             z_dim=100,
             condition_dim=128,
             is_bert_encoder=self.is_bert,
+            base_size=args.base_size,
             device=self.device,
             use_sagan=self.use_sagan
         )
@@ -85,18 +86,20 @@ class Text2ImgTrainer:
         return Text2ImgModel(**kwargs)
 
     @staticmethod
-    def build_dataset(path_to_data, dataset_type='birds'):
+    def build_dataset(path_to_data, base_size, dataset_type='birds'):
         if dataset_type == 'birds':
             preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
             tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
-            dataset = BirdsDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
+            dataset = BirdsDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc,
+                                   branch_num=args.branch_num, base_size=base_size)
         elif dataset_type == 'coco':
             preproc = CocoPreprocessor(data_path=path_to_data, dataset_name='coco')
             tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
-            dataset = CocoDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
+            dataset = CocoDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc,
+                                  branch_num=args.branch_num, base_size=base_size)
 
         image = dataset[0][0]
-        assert image[0].size() == torch.Size([3, 64, 64])
+        assert image[0].size() == torch.Size([3, base_size, base_size])
         return dataset
 
     @staticmethod

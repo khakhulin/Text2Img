@@ -27,7 +27,8 @@ class Text2ImgModel(nn.Module):
             condition_dim,
             is_bert_encoder,
             use_sagan,
-            device,
+            base_size,
+            device
     ):
         super(Text2ImgModel, self).__init__()
 
@@ -81,26 +82,30 @@ class Text2ImgModel(nn.Module):
             branch_num=branch_num,
             device=device,
             z_dim=z_dim,
-            is_sagan=use_sagan
+            is_sagan=use_sagan,
+            base_size=base_size,
         ).to(device)
         self.discriminators = []
         if branch_num > 0:
             self.discriminators.append(Discriminator64(
                 dim=num_discriminator_filters,
                 embd_dim=embedding_dim,
-                is_spectral=use_sagan
+                is_spectral=use_sagan,
+                base_size=base_size,
             ).to(device))
         if branch_num > 1:
             self.discriminators.append(Discriminator128(
                 ndf=num_discriminator_filters,
                 embd_dim=embedding_dim,
-                is_spectral=use_sagan
+                is_spectral=use_sagan,
+                base_size=base_size,
             ).to(device))
         if branch_num > 2:
             self.discriminators.append(Discriminator256(
                 ndf=num_discriminator_filters,
                 embd_dim=embedding_dim,
-                is_spectral=use_sagan
+                is_spectral=use_sagan,
+                base_size=base_size,
             ).to(device))
         self.generator.apply(init_weight)
 
@@ -176,8 +181,9 @@ if __name__ == '__main__':
         num_generator_filters=32,
         num_discriminator_filters=64,
         z_dim=100,
-        condition_dim=128,  # should be half of embedding_dim
+        condition_dim=128,
         is_bert_encoder=False,
+        base_size=32,
         device=DEV,
         use_sagan=True
     )
