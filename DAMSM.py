@@ -251,7 +251,7 @@ if __name__ == '__main__':
     args = init_config()
     run_name = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     # Load data (Birds)
-    preproc = BirdsPreprocessor(data_path='dataset/CUB_200_2011',
+    preproc = BirdsPreprocessor(data_path=args.data_path,
         dataset_name='cub'
     )
     if args.is_bert:

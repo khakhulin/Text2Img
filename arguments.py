@@ -20,7 +20,7 @@ def init_config():
 
     parser.add_argument('--save_path', default='./models_backup/exp1', type=str, help='path to save models')
     parser.add_argument('--datasets', default='birds', type=str, help='type of the dataset')
-
+    parser.add_argument('--data_path', default='dataset/CUB_200_2011', type=str, help='path to dataset')
     #  Training
     parser.add_argument('--pretrained_text_enc', default='', type=str, help='path to load text encoder weights')
     parser.add_argument('--pretrained_image_enc', default='', type=str, help='path to load image encoder weights')
