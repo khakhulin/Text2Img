@@ -12,7 +12,10 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 from torchvision.datasets.coco import CocoCaptions
-from pycocotools.coco import COCO
+try:
+    from pycocotools.coco import COCO
+except ImportError:
+    pass
 
 try:
     from pytorch_pretrained_bert import BertTokenizer
