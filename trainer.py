@@ -1,14 +1,16 @@
-import torch
-import torch.nn as nn
+import datetime
+
+import numpy as np
 import torch.optim as optim
-from torch.utils.data import DataLoader
+import tqdm
 from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader
 from torchvision.utils import make_grid
 
 from arguments import init_config
 from data_utils import BirdsPreprocessor, CaptionTokenizer, BirdsDataset, prepare_data
 from data_utils import CocoPreprocessor, CocoDataset
-from losses import discriminator_loss, generator_loss, KL_loss
+from modules.losses import discriminator_loss, generator_loss, KL_loss
 import os
 import time
 import numpy as np
@@ -16,14 +18,12 @@ import sys
 import tqdm
 import datetime
 
+from logger import Logger
+from modules.losses import discriminator_loss, generator_loss, KL_loss
+from scores.inception_score import GenImgData
+from scores.inception_score import inception_score
 from text2img_model import Text2ImgModel
 from utils import *
-from logger import Logger
-
-from scores.inception_score import inception_score
-from scores.inception_score import GenImgData
-from scores.fid_score import fid_score
-from scores.prd_score import prd_score, get_plot_as_numpy
 
 
 class Text2ImgTrainer:
@@ -48,6 +48,7 @@ class Text2ImgTrainer:
         )
         self.path_to_data = args.data_path
         self.is_bert = self.args.is_bert
+        self.use_sagan = self.args.use_sagan
         self.model = self.build_model(
             embedding_dim=args.embd_size,
             n_tokens=self.dataset.n_tokens,
@@ -61,7 +62,8 @@ class Text2ImgTrainer:
             z_dim=100,
             condition_dim=128,
             is_bert_encoder=self.is_bert,
-            device=self.device
+            device=self.device,
+            use_sagan=self.use_sagan
         )
         
         self.start = 0
