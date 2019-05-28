@@ -61,6 +61,7 @@ class Text2ImgTrainer:
             z_dim=100,
             condition_dim=128,
             is_bert_encoder=self.is_bert,
+            base_size=args.base_size,
             device=self.device
         )
         
