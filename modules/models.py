@@ -157,7 +157,7 @@ class AttentionGenerator(nn.Module):
         c_code, att = self.att(h_code, word_embs.permute(0,2,1))
         h_c_code = torch.cat((h_code, c_code), 1)
         out_code = self.res_net(h_c_code)
-        if self.use_self_attn:
+        if self.use_sagan:
             out_code = self.self_attn(out_code)
         # state size ngf/2 x 2in_size x 2in_size
         out_code = self.upsample(out_code)
