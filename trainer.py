@@ -7,6 +7,7 @@ from torchvision.utils import make_grid
 
 from arguments import init_config
 from data_utils import BirdsPreprocessor, CaptionTokenizer, BirdsDataset, prepare_data
+from data_utils import CocoPreprocessor, CocoDataset
 from losses import discriminator_loss, generator_loss, KL_loss
 import os
 import time
@@ -26,16 +27,15 @@ from scores.prd_score import prd_score, get_plot_as_numpy
 
 
 class Text2ImgTrainer:
-    def __init__(self, batch_size=20, data_path='datasets/CUB_200_2011',
-                 args=None):
+    def __init__(self, args=None):
         if args.cuda and torch.cuda.is_available():
             self.device = torch.device(f'cuda:{args.cuda_device}')
         else:
             self.device = 'cpu'
         self.writer = SummaryWriter()
-        self.batch_size = batch_size
+        self.batch_size = args.batch_size
         self.args = args #  TODO find better way to use arguments
-        self.dataset = self.build_dataset(data_path)
+        self.dataset = self.build_dataset(args.data_path)
         self.data_loader = DataLoader(
             dataset=self.dataset,
             batch_size=self.batch_size,
@@ -46,7 +46,7 @@ class Text2ImgTrainer:
             ['G_loss_%d' % (i) for i in range(args.branch_num)] +
             ['S_loss', 'W_loss', 'KL_loss']
         )
-        self.path_to_data = data_path
+        self.path_to_data = args.data_path
         self.is_bert = self.args.is_bert
         self.model = self.build_model(
             embedding_dim=args.embd_size,
@@ -83,11 +83,17 @@ class Text2ImgTrainer:
         return Text2ImgModel(**kwargs)
 
     @staticmethod
-    def build_dataset(path_to_data):
-        preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
-        tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
-        dataset = BirdsDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
-        image, _, _, _= dataset[0]
+    def build_dataset(path_to_data, dataset_type='birds'):
+        if dataset_type == 'birds':
+            preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
+            tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
+            dataset = BirdsDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
+        elif dataset_type == 'coco':
+            preproc = CocoPreprocessor(data_path=path_to_data, dataset_name='coco')
+            tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
+            dataset = CocoDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
+
+        image = dataset[0][0]
         assert image[0].size() == torch.Size([3, 64, 64])
         return dataset
 
@@ -335,7 +341,5 @@ if __name__ == '__main__':
     args = init_config()
     cur_time = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     run_name = os.path.join(args.exp_name, cur_time)
-    trainer = Text2ImgTrainer(
-        data_path=args.data_path, batch_size=args.batch_size, args=args
-    )
+    trainer = Text2ImgTrainer(args=args)
     trainer.train(run_name, epochs=args.max_epoch)

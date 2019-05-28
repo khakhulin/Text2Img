@@ -212,7 +212,11 @@ class BertCaptionTokenizer(BaseTokenizer):
 
 
 def prepare_data(data, device, is_damsm=False):
-    imgs, captions, caption_lengths, class_ids = data
+    if len(data) == 4:
+        imgs, captions, caption_lengths, class_ids = data
+    elif len(data) == 3:
+        imgs, captions, caption_lengths = data
+        class_ids = None
 
     # Sort data by the length in a decreasing order
     caption_lengths, sorted_idx = \
@@ -380,7 +384,7 @@ class CocoPreprocessor(DataPreprocessor):
 
         self.vocabs = {"idx_to_word": {}, "word_to_idx": {}}
 
-        if os.path.exists(self.vocab_path ):
+        if os.path.exists(self.vocab_path):
             with open(self.vocab_path, "rb") as bow_file:
                 self.vocabs = pickle.load(bow_file)
         else:
@@ -394,7 +398,6 @@ class CocoPreprocessor(DataPreprocessor):
         create vocabulary, tokenize captions with len>0
         :return: vocab dict
         """
-        
         train_annotations = os.path.join(self.captions_path, "captions_train2017.json")
         coco_ann = COCO(train_annotations)
 
@@ -456,9 +459,14 @@ class CocoDataset(Dataset):
             self.preprocessor = CocoPreprocessor(data_path='.', dataset_name='cub')
         else:
             self.preprocessor = preprocessor
-            
-        self.raw_dataset = CocoCaptions('coco/images/{}2017/'.format(mode),
-                                        'coco/annotations/captions_{}2017.json'.format(mode))
+        
+        data_path = self.preprocessor.data_dir
+        self.raw_dataset = CocoCaptions(
+            os.path.join(data_path, 'images', '{}2017/'.format(mode)),
+            os.path.join(data_path, 'annotations',
+                'captions_{}2017.json'.format(mode)
+            )
+        )
         
         self.branch_num = branch_num
         self.tokenizer = tokenizer
