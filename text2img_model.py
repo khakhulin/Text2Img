@@ -127,7 +127,7 @@ class Text2ImgModel(nn.Module):
             words_embeddings,
             mask
         )
-        return fake_images, mu, logvar, sentence_embedding, words_embeddings
+        return fake_images, attention_maps, mu, logvar, sentence_embedding, words_embeddings
     
     def save_model_ckpt(self, epoch, path):
         torch.save({

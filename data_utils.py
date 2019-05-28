@@ -270,7 +270,7 @@ class BirdsDataset(Dataset):
         self.mode = mode
         self.max_caption_size = MAX_SEQ_LEN
         if preprocessor is None:
-            self.preprocessor = BirdsPreprocessor(data_path='dataset/CUB_200_2011', dataset_name='cub')
+            self.preprocessor = BirdsPreprocessor(data_path='datasets/CUB_200_2011', dataset_name='cub')
         else:
             self.preprocessor = preprocessor
         self.branch_num = branch_num
@@ -338,7 +338,7 @@ class BirdsDataset(Dataset):
 
 
 if __name__ == '__main__':
-    preproc = BirdsPreprocessor(data_path='dataset/CUB_200_2011', dataset_name='cub')
+    preproc = BirdsPreprocessor(data_path='datasets/CUB_200_2011', dataset_name='cub')
     assert len(preproc.train) == 9813
     assert len(preproc.test) == 1179
     tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)

@@ -24,6 +24,10 @@ from scores.inception_score import GenImgData
 from scores.fid_score import fid_score
 from scores.prd_score import prd_score, get_plot_as_numpy
 
+from utils import draw_attentions
+
+import scipy.misc
+import scipy
 
 class Text2ImgTrainer:
     def __init__(self, batch_size=20, data_path='datasets/CUB_200_2011',
@@ -36,6 +40,7 @@ class Text2ImgTrainer:
         self.batch_size = batch_size
         self.args = args #  TODO find better way to use arguments
         self.dataset = self.build_dataset(data_path)
+        self.vocab = self.build_vocab(data_path)
         self.data_loader = DataLoader(
             dataset=self.dataset,
             batch_size=self.batch_size,
@@ -90,6 +95,11 @@ class Text2ImgTrainer:
         image, _, _ = dataset[0]
         assert image[0].size() == torch.Size([3, 64, 64])
         return dataset
+
+    @staticmethod
+    def build_vocab(path_to_data):
+        preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
+        return preproc.vocabs
 
     @staticmethod
     def build_optimizers(
@@ -164,7 +174,7 @@ class Text2ImgTrainer:
                     self.model.z_dim
                 ).to(self.device).normal_(0, 1)
 
-                fake_images, mu, logvar, sentence_embedding, words_embeddings = \
+                fake_images, att_maps, mu, logvar, sentence_embedding, words_embeddings = \
                     self.model(
                         captions,
                         cap_lens,
@@ -287,14 +297,15 @@ class Text2ImgTrainer:
                         self.model.z_dim
                     ).to(self.device).normal_(0, 1)
 
-                    gen_imgs_stack, _, _, _, _ = \
+                    gen_imgs_stack, attention_maps, _, _, _ , _= \
                         self.model(
                             val_cap,
                             val_cap_len,
                             val_noise,
                             val_mask
                         )
-                    
+
+                    #print("gen_imgs_stack shape", len(gen_imgs_stack))
                     # load_params(self.model.generator, backup_params)
                     for i, gen_imgs in enumerate(gen_imgs_stack):
                         size = 64*(2**i)
@@ -304,6 +315,40 @@ class Text2ImgTrainer:
                             'images/%d' % (size),
                             img_tensor, gen_iterations
                         )
+
+                    for i, gen_imgs in enumerate(gen_imgs_stack):
+                        #print(gen_imgs.shape, gen_imgs[0].shape)
+                        #print(gen_imgs[0].data.numpy().transpose((2,1,0)).shape)
+                        scipy.misc.imsave('imgs/{}+{}.jpg'.format(gen_iterations, i),
+                                          gen_imgs[0].data.numpy().transpose((2,1,0)))
+
+                    for i in range(n_images):
+                        for j in range(len(attention_maps)):
+                            if len(gen_imgs_stack) > 1:
+                                im = gen_imgs_stack[j + 1].detach().cpu()
+                                #im = val_img[j+1].detach().cpu()
+                            else:
+                                #im = val_img[0].detach().cpu()
+                                im = gen_imgs_stack[0].detach().cpu()
+
+                            att_maps = attention_maps[j]
+                            att_size = att_maps.size(2)
+
+                            #print('Go to draw_attentions')
+                            img_set, sentences = \
+                                draw_attentions(im[j].unsqueeze(0),
+                                                    captions[j].unsqueeze(0),
+                                                    [val_cap_len[i]], self.vocab['idx_to_word'],
+                                                    [att_maps[i]], att_size)
+
+                           # print('End drawing')
+
+                            if img_set is not None:
+                                #print(img_set.shape, type(img_set))
+                                #self.writer.add_image('att_images/{}-val image'.format(j), img_set)
+                                scipy.misc.imsave('imgs/{}+{}+{}.jpg'.format(gen_iterations, i, j), img_set)
+                                #print('image was saved successfully')
+
 
                     #val_fid_score = fid_score(gen_imgs, val_img, batch_size=4, cuda=self.device, dims=2048)
                     #self.writer.add_scalar('metrics/fid', val_fid_score, epoch)
