@@ -1,18 +1,19 @@
-import os
 import datetime
+import os
+
 import numpy as np
-from tqdm import tqdm
 import torch
 import torch.nn as nn
+from pytorch_pretrained_bert import BertModel
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from tqdm import tqdm
 import torchvision.transforms as transforms
 
 from arguments import init_config
 from custom_inception_v3 import custom_inception_v3
-from losses import func_attention, cosine_similarity, sent_loss, words_loss
 from data_utils import BirdsPreprocessor, BirdsDataset, CaptionTokenizer, BertCaptionTokenizer, prepare_data
-from utils import save, load, freeze_model
-from pytorch_pretrained_bert import BertModel
+from modules.losses import sent_loss, words_loss
+from utils import freeze_model
 
 
 class TextEncoder(nn.Module):
