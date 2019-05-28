@@ -81,7 +81,7 @@ class Text2ImgTrainer:
         preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
         tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
         dataset = BirdsDataset(mode='train', tokenizer=tokenizer, preprocessor=preproc, branch_num=args.branch_num)
-        image, _, _ = dataset[0]
+        image, _, _, _= dataset[0]
         assert image[0].size() == torch.Size([3, 64, 64])
         return dataset
 
@@ -121,7 +121,7 @@ class Text2ImgTrainer:
         )
         val_data = next(iter(val_dataloader))
         del val_dataloader
-        val_img, val_cap, val_cap_len, val_mask = prepare_data(
+        val_img, val_cap, val_cap_len, val_mask, _ = prepare_data(
             val_data, self.device
         )
         val_cap_str = self.dataset.tensor_to_caption(val_cap)
@@ -150,7 +150,7 @@ class Text2ImgTrainer:
             for data in tqdm.tqdm(self.data_loader, total=len(self.data_loader)):
                 set_requires_grad_value(self.model.discriminators, True)
 
-                images, captions, cap_lens, masks = prepare_data(data, self.device)
+                images, captions, cap_lens, masks, class_ids = prepare_data(data, self.device)
 
                 # batch size can be smaller in the end of the epoch
                 noise = torch.FloatTensor(
@@ -192,11 +192,13 @@ class Text2ImgTrainer:
                 set_requires_grad_value(self.model.discriminators, False)
                 self.generator_optimizer.zero_grad()
                 errG_total, g_losses, w_loss, s_loss = \
-                    generator_loss(self.model.discriminators,
-                                   self.model.image_encoder,
-                                   fake_images, real_labels,
-                                   words_embeddings, sentence_embedding,
-                                   cap_lens, self.args)
+                    generator_loss(
+                        self.model.discriminators,
+                        self.model.image_encoder,
+                        fake_images, real_labels,
+                        words_embeddings, sentence_embedding,
+                        cap_lens, self.args, class_ids=class_ids
+                    )
 
                 assert len(G_losses) == len(g_losses), 'generator loss error'
                 for i in range(len(G_losses)):
