@@ -7,6 +7,7 @@ import torch.nn as nn
 from pytorch_pretrained_bert import BertModel
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from tqdm import tqdm
+import torchvision.transforms as transforms
 
 from arguments import init_config
 from custom_inception_v3 import custom_inception_v3
@@ -260,20 +261,30 @@ if __name__ == '__main__':
         tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
 
     n_tokens = len(preproc.vocabs['idx_to_word'])
+    imsize = 299
 
-    train_data = BirdsDataset(mode='train', tokenizer=tokenizer,
-        preprocessor=preproc, base_size=299, branch_num=1
+    image_transform = transforms.Compose([
+        transforms.Resize(int(imsize * 76 / 64)),
+        transforms.RandomCrop(imsize),
+        transforms.RandomHorizontalFlip()
+    ])
+
+    train_data = BirdsDataset(
+        mode='train', tokenizer=tokenizer,
+        preprocessor=preproc, base_size=imsize, branch_num=1,
+        transform=image_transform
     )
-    val_data = BirdsDataset(mode='val', tokenizer=tokenizer,
-        preprocessor=preproc, base_size=299, branch_num=1
+    val_data = BirdsDataset(
+        mode='val', tokenizer=tokenizer,
+        preprocessor=preproc, base_size=imsize, branch_num=1
     )
     train_loader = torch.utils.data.DataLoader(
-        dataset=train_data,
+        dataset=train_data, drop_last=True,
         batch_size=args.damsm_batch_size,
         shuffle=True, num_workers=6
     )
     val_loader = torch.utils.data.DataLoader(
-        dataset=val_data,
+        dataset=val_data, drop_last=True,
         batch_size=args.damsm_batch_size,
         shuffle=True, num_workers=6
     )
@@ -293,8 +304,10 @@ if __name__ == '__main__':
         )
     image_encoder = ImageEncoder(args.embd_size)
     damsm = DAMSM(text_encoder, image_encoder, is_bert=args.is_bert).to(device)
-    optimizer = torch.optim.Adam(damsm.parameters(),
-        lr=args.damsm_lr, betas=(0.5, 0.999)
+    optimizer = torch.optim.Adam(
+        damsm.parameters(),
+        lr=args.damsm_lr, betas=(0.5, 0.999),
+        weight_decay=1e-4
     )    
     # Train
     image_dir = 'attn_images'
