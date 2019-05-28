@@ -40,7 +40,7 @@ class Text2ImgTrainer:
         )
         self.path_to_data = data_path
         self.is_bert = self.args.is_bert
-        self.use_sagan = self.use_sagan
+        self.use_sagan = self.args.use_sagan
         self.model = self.build_model(
             embedding_dim=args.embd_size,
             n_tokens=self.dataset.n_tokens,
