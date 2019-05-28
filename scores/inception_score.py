@@ -38,18 +38,27 @@ class ImageDataset(torch.utils.data.Dataset):
 					if img.endswith(".jpg"):
 						self.img_path_list.append(os.path.join(cur_subdir, img))
 
-		self.preprocess()
+		self.ds_len = len(self.img_path_list)
 
-	#NOTE: Do preprocessing to remove 1xHxW (1 channel) images
-	def preprocess(self):
-		idx = 0
-		print ("preprocessing ...")
-		for img_path in tqdm(self.img_path_list):
-			img = Image.open(img_path)
-			img = transforms.ToTensor()(img)
-			if (img.size(0) != 3):
-				del self.img_path_list[idx]
-			idx += 1
+	def __getitem__(self, index):
+		img = Image.open(self.img_path_list[index])
+		img = transforms.Resize((299, 299))(img)
+		img = transforms.ToTensor()(img)
+		img = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))(img)
+		return img
+
+	def __len__(self):
+		return self.ds_len
+
+class GenImgData(torch.utils.data.Dataset):
+	def __init__(self, path_to_imgs):
+		self.path_to_imgs = path_to_imgs
+
+		self.img_path_list = []
+
+		for img in os.listdir(self.path_to_imgs):
+			if img.endswith(".jpg"):
+				self.img_path_list.append(os.path.join(self.path_to_imgs, img))
 
 		self.ds_len = len(self.img_path_list)
 
@@ -64,12 +73,12 @@ class ImageDataset(torch.utils.data.Dataset):
 		return self.ds_len
 
 
-def inception_score(imgs, cuda = False, batch_size=32, resize=False, splits=10):
+def inception_score(imgs, cuda=False, batch_size=32, resize=False, splits=1):
 	
 	N = len(imgs)
 
 	assert batch_size > 0
-	assert N > batch_size
+	assert N >= batch_size
 
 	if cuda:
 		dtype = torch.cuda.FloatTensor

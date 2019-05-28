@@ -26,7 +26,6 @@ from nltk.tokenize import RegexpTokenizer
 
 MAX_SEQ_LEN = 30
 
-
 def get_preprocessor(dataset_name, data_dir):
     if dataset_name == "cub":
         return BirdsPreprocessor(dataset_name, data_dir)
@@ -66,7 +65,7 @@ class BirdsPreprocessor(DataPreprocessor):
 
         self.vocabs = {"idx_to_word": {}, "word_to_idx": {}}
 
-        if os.path.exists(self.vocab_path ):
+        if os.path.exists(self.vocab_path):
             with open(self.vocab_path, "rb") as bow_file:
                 self.vocabs = pickle.load(bow_file)
         else:
@@ -148,7 +147,7 @@ class BirdsPreprocessor(DataPreprocessor):
         X_train, X_test, y_train, y_test = train_test_split(filenames, labels, test_size=percent)
         X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.75*percent)
 
-        file_names = {"train": X_train, "val":X_val, "test": X_test}
+        file_names = {"train": X_train, "val": X_val, "test": X_test}
 
         with open(self.train_test_split_path, "wb" ) as tt_file:
             pickle.dump(file_names, tt_file)
@@ -212,21 +211,33 @@ class BertCaptionTokenizer(BaseTokenizer):
         return tokens
 
 
-def prepare_data(data, device, class_ids=None, is_damsm=False):
-    imgs, captions, caption_lengths = data
+def prepare_data(data, device, is_damsm=False):
+    imgs, captions, caption_lengths, class_ids = data
+
+    # Sort data by the length in a decreasing order
+    caption_lengths, sorted_idx = \
+        torch.sort(caption_lengths, 0, True)
+    
+    for i in range(len(imgs)):
+        imgs[i] = imgs[i][sorted_idx]
+    
+    captions = captions[sorted_idx]
 
     real_imgs = []
+
     if not is_damsm:
         for i in range(len(imgs)):
             real_imgs.append(imgs[i].to(device))
     else:
         real_imgs = imgs[-1].to(device)
+    
     max_len = MAX_SEQ_LEN
     # captions = captions[:, :max_len]
     captions = captions.squeeze()
     captions = captions.to(device)
-    if class_ids:
-        class_ids = class_ids.numpy()
+
+    if class_ids is not None:
+        class_ids = class_ids[sorted_idx].numpy()
 
     caption_lengths = caption_lengths.numpy()
     mask = caption_lengths[:,None] > np.arange(max_len)
@@ -234,7 +245,7 @@ def prepare_data(data, device, class_ids=None, is_damsm=False):
     input_mask[mask] = 1
     input_mask = torch.from_numpy(input_mask).squeeze().to(device)
 
-    return (real_imgs, captions, caption_lengths, input_mask)
+    return (real_imgs, captions, caption_lengths, input_mask, class_ids)
 
 
 def get_imgs(img_path, imsize, branch_num, transform=None, img=None):
@@ -264,7 +275,8 @@ def get_imgs(img_path, imsize, branch_num, transform=None, img=None):
 
 
 class BirdsDataset(Dataset):
-    def __init__(self, mode='test', tokenizer=None, preprocessor=None, base_size=64, branch_num=3):
+    def __init__(self, mode='test', tokenizer=None, preprocessor=None,
+                 base_size=64, branch_num=3, transform=None):
         """
         :param mode: train/test/val
         :param tokenizer: object which can tokenize caption
@@ -274,6 +286,7 @@ class BirdsDataset(Dataset):
         """
         super(BirdsDataset, self).__init__()
         self.mode = mode
+        self.transform = transform
         self.max_caption_size = MAX_SEQ_LEN
         if preprocessor is None:
             self.preprocessor = BirdsPreprocessor(data_path='dataset/CUB_200_2011', dataset_name='cub')
@@ -286,7 +299,7 @@ class BirdsDataset(Dataset):
 
         self._load_all_captions()
 
-        for i in range(self.branch_num):
+        for _ in range(self.branch_num):
             self.imsize.append(base_size)
             base_size = base_size * 2
 
@@ -296,16 +309,21 @@ class BirdsDataset(Dataset):
     def __getitem__(self, idx):
         """
         :param idx:
-        :return: Tuple: lis image (branch_num x [CxWxH]), caption (max_seq len), caption_length (int)
+        :return:
+            Tuple: list image (branch_num x [CxWxH]),
+                   caption (max_seq len),
+                   caption_length (int),
+                   class_id (int)
         """
         image_name = os.path.join(self.preprocessor.data_path, self.img_file_names[idx])
-        image = get_imgs(image_name, self.imsize, branch_num=self.branch_num)
+        class_id = self.class_ids[idx]
+        image = get_imgs(image_name, self.imsize, branch_num=self.branch_num, transform=self.transform)
         # select a random sentence
         cap_idx = np.random.choice(np.arange(len(self.img_captions[idx])))
         caption, caption_length = self.tokenizer.get_padded_tensor(self.img_captions[idx][cap_idx])
         caption_length = np.array(caption_length)
 
-        return image, caption, caption_length
+        return image, caption, caption_length, class_id
 
     def _which_image_data(self):
         img_file_names = []
@@ -319,6 +337,7 @@ class BirdsDataset(Dataset):
 
     def _load_all_captions(self):
         self.img_file_names = self._which_image_data()
+        self.class_ids = [int(l.split('.')[0]) for l in self.img_file_names]
         self.img_captions = []
         for name in self.img_file_names:
             name_parts = name.split('.')
@@ -495,7 +514,7 @@ if __name__ == '__main__':
     print(test_str2, tokenizer.tokenize(test_str))
 
     dataset = BirdsDataset(tokenizer=tokenizer, preprocessor=preproc, branch_num=2)
-    image, caption, length = dataset[0]
+    image, caption, length, class_id = dataset[0]
     assert image[0].size() == torch.Size([3, 64, 64])
     data_loader = torch.utils.data.DataLoader(dataset=dataset, batch_size=4)
     next_batch = next(iter(data_loader))

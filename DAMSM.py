@@ -5,6 +5,7 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+import torchvision.transforms as transforms
 
 from arguments import init_config
 from custom_inception_v3 import custom_inception_v3
@@ -39,9 +40,7 @@ class TextEncoder(nn.Module):
     def forward(self, cap, cap_len):
         bs = cap.size(0)
         h = self.drop(self.emb(cap))
-        h = pack_padded_sequence(h, cap_len, batch_first=True,
-                                 enforce_sorted=False)
-
+        h = pack_padded_sequence(h, cap_len, batch_first=True)
         #print(h.size())
         # initialize hidden state
         h0 = torch.randn(
@@ -142,7 +141,7 @@ class DAMSM(nn.Module):
         self.image_encoder = image_encoder
         self.is_bert = is_bert
 
-    def forward(self, imgs, caps, caps_len, args, bert_mask=None):
+    def forward(self, imgs, caps, caps_len, args, class_ids=None, bert_mask=None):
         # Bx(HxW)xD, BxD
         img_f_w, img_f_s = self.image_encoder(imgs)
         # BxTxD, BxD
@@ -151,8 +150,12 @@ class DAMSM(nn.Module):
         else:
             text_f_w, text_f_s = self.text_encoder(caps, caps_len)
 
-        s_loss0, s_loss1 = sent_loss(img_f_s, text_f_s, args)
-        w_loss0, w_loss1, _ = words_loss(img_f_w, text_f_w, caps_len, args)
+        s_loss0, s_loss1 = sent_loss(
+            img_f_s, text_f_s, args, class_ids=class_ids
+        )
+        w_loss0, w_loss1, _ = words_loss(
+            img_f_w, text_f_w, caps_len, args, class_ids=class_ids
+        )
 
         return w_loss0, w_loss1, s_loss0, s_loss1
 
@@ -167,13 +170,21 @@ class DAMSM(nn.Module):
 
         for data in tqdm(dataloader, total=len(dataloader)):
 
-            imgs, caps, caps_len, masks = prepare_data(data, device, is_damsm=True)
+            imgs, caps, caps_len, masks, class_ids = \
+                prepare_data(data, device, is_damsm=True)
+
             if self.is_bert:
                 w_loss0, w_loss1, s_loss0, s_loss1 = \
-                    self.forward(imgs, caps, caps_len, args, bert_mask=masks)
+                    self.forward(
+                        imgs, caps, caps_len, args,
+                        class_ids=class_ids, bert_mask=masks
+                    )
             else:
                 w_loss0, w_loss1, s_loss0, s_loss1 = \
-                    self.forward(imgs, caps, caps_len, args)
+                    self.forward(
+                        imgs, caps, caps_len, args, class_ids=class_ids
+                    )
+
             loss = s_loss0 + s_loss1 + w_loss0 + w_loss1
             w_total_loss0 += w_loss0.item()
             w_total_loss1 += w_loss1.item()
@@ -217,13 +228,21 @@ class DAMSM(nn.Module):
         with torch.no_grad():
             for data in loader:
 
-                imgs, caps, caps_len = data
-                imgs = imgs[-1].to(device)
-                caps = caps.to(device)
-                caps_len = caps_len.to(device)
+                imgs, caps, caps_len, masks, class_ids = \
+                    prepare_data(data, device, is_damsm=True)
 
-                w_loss0, w_loss1, s_loss0, s_loss1 = \
-                    self.forward(imgs, caps, caps_len, args)
+                if self.is_bert:
+                    w_loss0, w_loss1, s_loss0, s_loss1 = \
+                        self.forward(
+                            imgs, caps, caps_len, args,
+                            class_ids=class_ids, bert_mask=masks
+                        )
+                else:
+                    w_loss0, w_loss1, s_loss0, s_loss1 = \
+                        self.forward(
+                            imgs, caps, caps_len, args,
+                            class_ids=class_ids
+                        )
                 # loss = w_loss0 + w_loss1 + s_loss0 + s_loss1
 
                 w_total_loss0 += w_loss0.item()
@@ -250,7 +269,7 @@ if __name__ == '__main__':
     args = init_config()
     run_name = datetime.datetime.now().strftime('%d:%m:%Y:%H-%M-%S')
     # Load data (Birds)
-    preproc = BirdsPreprocessor(data_path='dataset/CUB_200_2011',
+    preproc = BirdsPreprocessor(data_path=args.data_path,
         dataset_name='cub'
     )
     if args.is_bert:
@@ -259,20 +278,30 @@ if __name__ == '__main__':
         tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx)
 
     n_tokens = len(preproc.vocabs['idx_to_word'])
+    imsize = 299
 
-    train_data = BirdsDataset(mode='train', tokenizer=tokenizer,
-        preprocessor=preproc, base_size=299, branch_num=1
+    image_transform = transforms.Compose([
+        transforms.Resize(int(imsize * 86 / 64)),
+        transforms.CenterCrop(imsize),
+        transforms.RandomHorizontalFlip()
+    ])
+
+    train_data = BirdsDataset(
+        mode='train', tokenizer=tokenizer,
+        preprocessor=preproc, base_size=imsize, branch_num=1,
+        transform=image_transform
     )
-    val_data = BirdsDataset(mode='val', tokenizer=tokenizer,
-        preprocessor=preproc, base_size=299, branch_num=1
+    val_data = BirdsDataset(
+        mode='val', tokenizer=tokenizer,
+        preprocessor=preproc, base_size=imsize, branch_num=1
     )
     train_loader = torch.utils.data.DataLoader(
-        dataset=train_data,
+        dataset=train_data, drop_last=True,
         batch_size=args.damsm_batch_size,
         shuffle=True, num_workers=6
     )
     val_loader = torch.utils.data.DataLoader(
-        dataset=val_data,
+        dataset=val_data, drop_last=True,
         batch_size=args.damsm_batch_size,
         shuffle=True, num_workers=6
     )
@@ -292,9 +321,14 @@ if __name__ == '__main__':
         )
     image_encoder = ImageEncoder(args.embd_size)
     damsm = DAMSM(text_encoder, image_encoder, is_bert=args.is_bert).to(device)
-    optimizer = torch.optim.Adam(damsm.parameters(),
-        lr=args.damsm_lr, betas=(0.5, 0.999)
-    )    
+    optimizer = torch.optim.Adam(
+        damsm.parameters(),
+        lr=args.damsm_lr, betas=(0.5, 0.999),
+        weight_decay=1e-5
+    )
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, patience=3, factor=0.8, verbose=True
+    )
     # Train
     image_dir = 'attn_images'
     save_dir = os.path.join('trained_models/DAMSM', run_name)
@@ -318,7 +352,8 @@ if __name__ == '__main__':
             args, device
         )
         loss = damsm.evaluate(epoch, val_loader, image_dir, args, device)
-        # # Save best model
+        scheduler.step(loss)
+        # Save best model
         if loss < min_loss:
             min_loss = loss
             torch.save(

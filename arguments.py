@@ -20,8 +20,12 @@ def init_config():
 
     parser.add_argument('--save_path', default='./models_backup/exp1', type=str, help='path to save models')
     parser.add_argument('--datasets', default='birds', type=str, help='type of the dataset')
-
+    parser.add_argument('--data_path', default='dataset/CUB_200_2011', type=str, help='path to dataset')
     #  Training
+    parser.add_argument('--pretrained_text_enc', default='', type=str, help='path to load text encoder weights')
+    parser.add_argument('--pretrained_image_enc', default='', type=str, help='path to load image encoder weights')
+    parser.add_argument('--pretrained_generator', default='', type=str, help='path to load generator weights')
+    parser.add_argument('--continue_from', default='', type=str, help='checkpoint path to start from')
     parser.add_argument('--log_every', default=200, type=int, help='frequency of logging')
     parser.add_argument('--snapshot_every', default=2000, type=int, help='frequency of model saving')
     parser.add_argument('--batch_size', default=8, type=int, help='size of batch in buffer')
@@ -33,6 +37,7 @@ def init_config():
     parser.add_argument('--beta1', default=0.5, type=float, help='learning rate for discriminator')
     parser.add_argument('--beta2', default=0.999, type=float, help='learning rate for discriminator')
     parser.add_argument('--smooth_lambda', default=0.3, type=float, help='smooth constant for ranking loss')
+    parser.add_argument('--inception_score_on_validation', default=False, type=bool, help='measure inception score on validation')
 
     #  Model
     parser.add_argument('--embd_size', default=256, type=int, help='size of embedding vectors in gcn')

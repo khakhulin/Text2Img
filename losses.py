@@ -181,7 +181,7 @@ def discriminator_loss(netD, real_imgs, fake_imgs, conditions,
 def generator_loss(netsD, image_encoder,
                    fake_images, real_labels,
                    words_embeddings, sentence_embedding,
-                   cap_lens, args):
+                   cap_lens, args, class_ids=None):
     numDs = len(netsD)
     batch_size = real_labels.size(0)
     g_losses = []
@@ -213,13 +213,17 @@ def generator_loss(netsD, image_encoder,
         if i == (numDs - 1):
             # words_features: batch_size x nef x 17 x 17
             # sent_code: batch_size x nef
-            #  TODO unsupported feature
-            class_ids = None
             region_features, cnn_code = image_encoder(fake_images[i])
-            w_loss0, w_loss1, _ = words_loss(region_features, words_embeddings,  cap_lens, args=args, class_ids=None)
+            
+            w_loss0, w_loss1, _ = words_loss(
+                region_features, words_embeddings,
+                cap_lens, args=args, class_ids=class_ids
+            )
             w_loss = w_loss0 + w_loss1
 
-            s_loss0, s_loss1 = sent_loss(cnn_code, sentence_embedding, args, class_ids)
+            s_loss0, s_loss1 = sent_loss(
+                cnn_code, sentence_embedding, args, class_ids=class_ids
+            )
             s_loss = s_loss0 + s_loss1
 
             errG_total += (w_loss + s_loss) * args.smooth_lambda
