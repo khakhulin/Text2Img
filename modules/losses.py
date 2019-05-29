@@ -155,7 +155,7 @@ def discriminator_loss(netD, real_imgs, fake_imgs, conditions,
         criterion = nn.BCELoss()
     else:
         raise ValueError(
-            f"{args.loss_type} loss is not supported\n"
+            f"{loss_type} loss is not supported\n"
             "Supported types: ls-gan, bce"
         )
 
