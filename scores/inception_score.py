@@ -53,7 +53,6 @@ class ImageDataset(torch.utils.data.Dataset):
 class GenImgData(torch.utils.data.Dataset):
 	def __init__(self, path_to_imgs):
 		self.path_to_imgs = path_to_imgs
-
 		self.img_path_list = []
 
 		for img in os.listdir(self.path_to_imgs):
@@ -132,12 +131,13 @@ if __name__ == '__main__':
 	parser.add_argument('--dataset_path', default='', type=str)
 	args = parser.parse_args()
 
-	img_dataset = ImageDataset(args.dataset_path)
+	#img_dataset = ImageDataset(args.dataset_path)
+	img_dataset = GenImgData(args.dataset_path)
 
 	print ("Bird dataset len: ", img_dataset.__len__())
 
 	print ("Calculating Inception Score...")
-	print (inception_score(img_dataset, cuda=False, batch_size=32, resize=True, splits=10))
+	print (inception_score(img_dataset, cuda=False, batch_size=1, resize=True, splits=1))
 
 
 #CIFAR Example
