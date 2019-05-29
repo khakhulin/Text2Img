@@ -37,6 +37,7 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from scipy import linalg
 from scipy.misc import imread
 from torch.nn.functional import adaptive_avg_pool2d
@@ -69,7 +70,7 @@ def remove_one_channel_img(files_list):
     return files
 
 
-def get_activations(files_list, model, batch_size=50, dims=2048,
+def get_activations(files, model, batch_size=50, dims=2048,
                     cuda=False, verbose=False):
     """Calculates the activations of the pool_3 layer for all images.
 
@@ -92,7 +93,7 @@ def get_activations(files_list, model, batch_size=50, dims=2048,
     """
     model.eval()
 
-    files = remove_one_channel_img(files_list)
+    #print ("len files: ", len(files))
 
     if len(files) % batch_size != 0:
         print(('Warning: number of images is not a multiple of the '
@@ -116,8 +117,7 @@ def get_activations(files_list, model, batch_size=50, dims=2048,
 
         images = np.array([imread(str(f)).astype(np.float32)
                            for f in files[start:end]])
-
-        # Reshape to (n_images, 3, height, width)
+        
         images = images.transpose((0, 3, 1, 2))
         images /= 255
 
@@ -221,30 +221,32 @@ def calculate_activation_statistics(files, model, batch_size=50,
     sigma = np.cov(act, rowvar=False)
     return mu, sigma
 
-
 def _compute_statistics_of_path(path, model, batch_size, dims, cuda):
     print ("compute statistics")
-    print ("path: ", path)
-    if path.endswith('.npz'):
-        f = np.load(path)
-        m, s = f['mu'][:], f['sigma'][:]
-        f.close()
+
+    if (isinstance(path, str)):
+
+        if path.endswith('.npz'):
+            f = np.load(path)
+            m, s = f['mu'][:], f['sigma'][:]
+            f.close()
+        else:
+            path = pathlib.Path(path)
+            
+            files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
+            
+            #files = []
+            #for img_dir in os.listdir(path):
+            #    images_path = os.path.join(path, img_dir)
+            #    images_path = pathlib.Path(images_path)
+
+            #    files += list(images_path.glob('*.jpg'))
+            #    files += list(images_path.glob('*.png'))
     else:
-        path = pathlib.Path(path)
-        #print ("path: ", path)
-        #files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
-        
-        files = []
-        for img_dir in os.listdir(path):
-            images_path = os.path.join(path, img_dir)
-            images_path = pathlib.Path(images_path)
-
-            files += list(images_path.glob('*.jpg'))
-            files += list(images_path.glob('*.png'))
+        files = path
 
 
-        m, s = calculate_activation_statistics(files, model, batch_size,
-                                               dims, cuda)
+    m, s = calculate_activation_statistics(files, model, batch_size, dims, cuda)
 
     return m, s
 
@@ -285,9 +287,9 @@ def compute_statistics(imgs, model, batch_size, cuda, dims):
 
 def calculate_fid_given_paths(paths, batch_size, cuda, dims):
     """Calculates the FID of two paths"""
-    for p in paths:
-        if not os.path.exists(p):
-            raise RuntimeError('Invalid path: %s' % p)
+    #for p in paths:
+    #    if not os.path.exists(p):
+    #        raise RuntimeError('Invalid path: %s' % p)
 
     block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[dims]
 
@@ -307,7 +309,7 @@ def calculate_fid_given_paths(paths, batch_size, cuda, dims):
 def fid_score(imgs1, imgs2, batch_size, cuda, dims):
     block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[dims]
 
-    model = InceptionV3([block_idx])
+    model = InceptionV3([block_idx], resize_input=True)
     if cuda:
         model.cuda()
 

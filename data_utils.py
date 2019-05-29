@@ -87,7 +87,8 @@ class BirdsPreprocessor(DataPreprocessor):
         self.val = self.splitted_data["val"]
 
     def get_test_split_imgs(self):
-        return self.test
+        test_img_list = [os.path.join(self.data_dir, "images", path) for path in self.test]
+        return test_img_list
 
     def preprocess(self):
         """

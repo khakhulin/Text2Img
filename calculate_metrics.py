@@ -42,6 +42,7 @@ class Text2ImgTester():
 
 		print ("path to data: ", path_to_data)
 		preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
+		self.test_imgs_list = preproc.get_test_split_imgs()
 		tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
 		dataset = BirdsDataset(mode='test', tokenizer=tokenizer, preprocessor=preproc, branch_num=3, base_size=base_size)
 
@@ -77,12 +78,21 @@ class Text2ImgTester():
 			img_tensor = save_images(gen_images[-1], filenames, save_dir, '', gen_images[-1].size(3))
 
 
+		# inception score calculation
 		gen_save_folder = os.path.join(save_dir, 'images', 'iter', str(gen_images[-1].size(3)))
 		gen_img_iterator = GenImgData(gen_save_folder)
 		mean_val, std_val = inception_score(gen_img_iterator, cuda=False, batch_size=32, resize=False, splits=4)
 		print ("inception score")
 		print ("mean: ", mean_val)
 		print ("std: ", std_val)
+
+		#fid calculation
+		paths_to_fid = []
+		paths_to_fid.append(gen_save_folder)
+		paths_to_fid.append(self.test_imgs_list)
+		fid_val = calculate_fid_given_paths(paths_to_fid, batch_size=1, cuda=False, dims=2048)
+		print ("fid val: ", fid_val)
+
 
 
 
