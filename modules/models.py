@@ -87,10 +87,7 @@ class ConditionNoise(nn.Module):
 
     def reparametrize(self, mu, logvar):
         std = logvar.mul(0.5).exp_()
-        eps = torch.FloatTensor(std.size())\
-            .normal_() \
-            .requires_grad_(True)\
-            .to(self.device)
+        eps = torch.FloatTensor(std.size()).normal_().to(self.device)
         return eps.mul(std).add_(mu)
 
     def forward(self, text_embedding):
