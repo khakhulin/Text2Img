@@ -201,7 +201,7 @@ class Generator(nn.Module):
                 self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
             else:
                 self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf,
-                                                 num_res_block=num_res_block, use_sagan=True)
+                                                 num_res_block=num_res_block, use_sagan=is_sagan)
             self.img_net2 = ImageGenMod(ngf=ngf, is_spectral=is_sagan)
         if branch_num > 2:
             self.h_net3 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
