@@ -11,12 +11,12 @@ import time
 import datetime
 import torch
 from utils import save_images
+from arguments import init_config
 
 class Text2ImgTester():
-	def __init__(self, data_path, batch_size, embd_size, text_enc_emb_size, pretrained_text_enc, pretrained_image_enc, pretrained_generator, branch_num, is_bert, base_size, device, use_sagan):
-		print ("data path: ", data_path)
+	def __init__(self, data_path, datasets, batch_size, embd_size, text_enc_emb_size, pretrained_text_enc,\
+			pretrained_image_enc, pretrained_generator, branch_num, is_bert, base_size, device, use_sagan):
 		self.dataset = self.build_dataset(data_path, base_size)
-		print ("self dataset: ", self.dataset)
 		self.batch_size = batch_size
 		self.data_loader = DataLoader(dataset=self.dataset, batch_size=self.batch_size, shuffle=True, drop_last=True)
 		self.device = device
@@ -39,13 +39,18 @@ class Text2ImgTester():
 			use_sagan=use_sagan)
 
 	def build_dataset(self, path_to_data, base_size, dataset_type='birds'):
-
-		print ("path to data: ", path_to_data)
-		preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
-		self.test_imgs_list = preproc.get_test_split_imgs()
-		tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
-		dataset = BirdsDataset(mode='test', tokenizer=tokenizer, preprocessor=preproc, branch_num=3, base_size=base_size)
-
+		if dataset_type == 'birds':
+			preproc = BirdsPreprocessor(data_path=path_to_data, dataset_name='cub')
+			self.test_imgs_list = preproc.get_test_split_imgs()
+			tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
+			dataset = BirdsDataset(mode='test', tokenizer=tokenizer, preprocessor=preproc, branch_num=3, base_size=base_size)
+		elif dataset_type == 'coco':
+			preproc = CocoPreprocessor(data_path=path_to_data, dataset_name='coco')
+			tokenizer = CaptionTokenizer(word_to_idx=preproc.word_to_idx, idx_to_word=preproc.idx_to_word)
+			dataset = CocoDataset(mode='test', tokenizer=tokenizer, preprocessor=preproc,
+									branch_num=args.branch_num, base_size=base_size)
+		image = dataset[0][0]
+		assert image[0].size() == torch.Size([3, base_size, base_size])
 		return dataset
 
 	def get_inception_score(self, path_to_generated_imgs):
@@ -77,7 +82,6 @@ class Text2ImgTester():
 			filenames = [str(gen_iter) + str(i) for i in range(gen_images[-1].size(0))]
 			img_tensor = save_images(gen_images[-1], filenames, save_dir, '', gen_images[-1].size(3))
 
-
 		# inception score calculation
 		gen_save_folder = os.path.join(save_dir, 'images', 'iter', str(gen_images[-1].size(3)))
 		gen_img_iterator = GenImgData(gen_save_folder)
@@ -94,24 +98,28 @@ class Text2ImgTester():
 		print ("fid val: ", fid_val)
 
 
-
-
-
 if __name__ == '__main__':
 	
+	args = init_config()
+	
 	model = Text2ImgTester(
-			data_path='dataset/CUB_200_2011',
-			batch_size = 32,
-			embd_size = 256,
-			text_enc_emb_size=128,
-			pretrained_text_enc='',
-			pretrained_image_enc='',
-			pretrained_generator='',
-			branch_num=3,
-			is_bert=False,
-			base_size=64,
+			data_path = args.data_path,
+			datasets = args.datasets,
+			batch_size = args.batch_size,
+			embd_size = args.embd_size,
+			text_enc_emb_size=args.text_enc_emb_size,
+			pretrained_text_enc=args.pretrained_text_enc,
+			pretrained_image_enc=args.pretrained_image_enc,
+			pretrained_generator=args.pretrained_generator,
+			branch_num=args.branch_num,
+			is_bert=args.is_bert,
+			base_size=args.base_size,
 			device='cpu',
-			use_sagan=False)
+			use_sagan=args.use_sagan)
+
+	if args.continue_from and os.path.exists(args.continue_from):
+		print('Start from checkpoint')
+		self.start = self.model.load_model_ckpt(args.continue_from)
 
 	model.get_scores()
 
