@@ -182,6 +182,22 @@ class Text2ImgTrainer:
                         masks
                     )
 
+                #"""
+                for l in range(len(fake_images)):
+                    im = images[l].detach().cpu()
+
+                    img_set, sentences = \
+                        draw_attentions(im,
+                                        captions,
+                                        cap_lens, self.vocab['idx_to_word'],
+                                        words_embeddings)
+
+                    for k, im in enumerate(img_set):
+                        scipy.misc.imsave('imgs/{}+{}+{}'
+                                          '.jpg'.format(gen_iterations, l, k), im)
+
+                #"""
+
                 errD_total = 0
 
                 for i in range(len(self.model.discriminators)):
@@ -307,8 +323,8 @@ class Text2ImgTrainer:
 
                     #print("gen_imgs_stack shape", len(gen_imgs_stack))
                     # load_params(self.model.generator, backup_params)
-                    for i, gen_imgs in enumerate(gen_imgs_stack):
-                        size = 64*(2**i)
+                    for l, gen_imgs in enumerate(gen_imgs_stack):
+                        size = 64*(2**l)
                         img_tensor = save_images(gen_imgs, None, log_dir, gen_iterations, size)
                         img_tensor = make_grid(img_tensor, nrow=n_images, padding=5)
                         self.writer.add_image(
@@ -316,39 +332,54 @@ class Text2ImgTrainer:
                             img_tensor, gen_iterations
                         )
 
-                    for i, gen_imgs in enumerate(gen_imgs_stack):
+                    """
+                    for l, gen_imgs in enumerate(gen_imgs_stack):
                         #print(gen_imgs.shape, gen_imgs[0].shape)
                         #print(gen_imgs[0].data.numpy().transpose((2,1,0)).shape)
-                        scipy.misc.imsave('imgs/{}+{}.jpg'.format(gen_iterations, i),
+                        scipy.misc.imsave('imgs/{}+{}.jpg'.format(gen_iterations, l),
                                           gen_imgs[0].data.numpy().transpose((2,1,0)))
 
-                    for i in range(n_images):
+                    for l in range(n_images):
                         for j in range(len(attention_maps)):
                             if len(gen_imgs_stack) > 1:
                                 im = gen_imgs_stack[j + 1].detach().cpu()
-                                #im = val_img[j+1].detach().cpu()
                             else:
-                                #im = val_img[0].detach().cpu()
                                 im = gen_imgs_stack[0].detach().cpu()
 
                             att_maps = attention_maps[j]
                             att_size = att_maps.size(2)
+                            print('---------')
+                            for v in val_img:
+                                print(v.size())
+                            print(words_embeddings.size())
+
+
+                     #       print(im[l].unsqueeze(0).shape, captions[l].unsqueeze(0).shape,att_maps[l].shape)
+                     #       print(val_cap_len[l], att_size)
+
+                     #       torch.Size([1, 3, 128, 128])
+                     #       torch.Size([1, 30])
+                     #       torch.Size([23, 64, 64])
+                     #       15
+                     #       64
 
                             #print('Go to draw_attentions')
                             img_set, sentences = \
-                                draw_attentions(im[j].unsqueeze(0),
-                                                    captions[j].unsqueeze(0),
-                                                    [val_cap_len[i]], self.vocab['idx_to_word'],
-                                                    [att_maps[i]], att_size)
+                                draw_attentions_using_map(im[l].unsqueeze(0),
+                                                    captions[l].unsqueeze(0),
+                                                    [val_cap_len[l]], self.vocab['idx_to_word'],
+                                                    [att_maps[l]], att_size)
 
                            # print('End drawing')
 
                             if img_set is not None:
                                 #print(img_set.shape, type(img_set))
                                 #self.writer.add_image('att_images/{}-val image'.format(j), img_set)
-                                scipy.misc.imsave('imgs/{}+{}+{}.jpg'.format(gen_iterations, i, j), img_set)
+                                scipy.misc.imsave('imgs/{}+{}+{}+{}.jpg'.format(gen_iterations, i, j, sentences), img_set)
                                 #print('image was saved successfully')
 
+                        if True: break
+                        """
 
                     #val_fid_score = fid_score(gen_imgs, val_img, batch_size=4, cuda=self.device, dims=2048)
                     #self.writer.add_scalar('metrics/fid', val_fid_score, epoch)
@@ -356,6 +387,7 @@ class Text2ImgTrainer:
                     #precision, recall = prd_score(val_img, gen_imgs)
                     #pr_plot = get_plot_as_numpy(precision, recall)
                     #self.writer.add_image('metrics/prd_score', pr_plot, epoch)
+
 
                     self.model.generator.train()
                 # make a snapshot
@@ -371,7 +403,7 @@ class Text2ImgTrainer:
                 val_inception_score = inception_score(gen_img_iterator, batch_size=1)
                 self.writer.add_scalar('metrics/inception', val_inception_score[0], epoch)
 
-        self.writer.close()
+            self.writer.close()
 
 if __name__ == '__main__':
     assert torch.__version__== '1.1.0'

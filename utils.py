@@ -10,6 +10,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import skimage.transform
 
+from models import *
+import scipy
+
 
 class Downsample16(nn.Sequential):
     def __init__(self, num_out):
@@ -132,7 +135,38 @@ COLOR_DIC = {0:[128,64,128],  1:[244, 35,232],
 FONT_MAX = 50
 
 
-def draw_attentions(real_imgs, captions, cap_lens, ixtoword,
+def draw_attention_by_path(data_path, captions, cap_lens, ixtoword, word_embeddings, vis_size=256, topK=5):
+    imgs = []
+    for img in os.listdir(data_path):
+        imgs.append(torch.from_numpy(scipy.misc.imread(os.path.join(data_path, img))))
+
+    imgs = torch.stack(imgs)
+
+    return draw_attentions(imgs, captions, cap_lens, ixtoword, word_embeddings, vis_size, topK)
+
+
+def calc_attention(imgs, embeddings):
+    att = GlobalAttentionGeneral(imgs.size(1), embeddings.size(1))
+    _, attn = att.forward(imgs, embeddings)
+    return attn
+
+
+def draw_attentions(real_imgs, captions, cap_lens, ixtoword, word_embeddings, vis_size=256, topK=5):
+    attn_maps = calc_attention(real_imgs, word_embeddings)
+    attn_size = attn_maps.size(2)
+
+    ret_sent = []
+    ret_img = []
+
+    for i in range(real_imgs.size(0)):
+        im,sent = draw_attentions_using_map(real_imgs[i].unsqueeze(0), captions[i].unsqueeze(0), [cap_lens[i]], ixtoword,
+                        [attn_maps[i]], attn_size, vis_size, topK)
+        ret_img.append(im)
+        ret_sent.append(sent)
+    return ret_img, ret_sent
+
+
+def draw_attentions_using_map(real_imgs, captions, cap_lens, ixtoword,
                         attn_maps, att_sze, vis_size=256, topK=5):
     batch_size = real_imgs.size(0)
     max_word_num = np.max(cap_lens)
@@ -194,8 +228,7 @@ def draw_attentions(real_imgs, captions, cap_lens, ixtoword,
 
             PIL_im = Image.fromarray(np.uint8(img))
             PIL_att = Image.fromarray(np.uint8(one_map))
-            merged = \
-                Image.new('RGBA', (vis_size, vis_size), (0, 0, 0, 0))
+            merged = Image.new('RGBA', (vis_size, vis_size), (0, 0, 0, 0))
             mask = Image.new('L', (vis_size, vis_size), (180))  # (210)
             merged.paste(PIL_im, (0, 0))
             merged.paste(PIL_att, (0, 0), mask)
@@ -251,8 +284,10 @@ def drawCaption(convas, captions, ixtoword, vis_size, off1=2, off2=2):
             if cap[j] == 0:
                 break
             word = ixtoword[cap[j]].encode('ascii', 'ignore').decode('ascii')
-            d.text(((j + off1) * (vis_size + off2), i * FONT_MAX), '%d:%s' % (j, word[:6]),
+            d.text(((j + off1) * (vis_size + off2), i * FONT_MAX), '%d:%s' % (j, word),
                    font=fnt, fill=(255, 255, 255, 255))
             sentence.append(word)
         sentence_list.append(sentence)
     return img_txt, sentence_list
+
+
