@@ -86,6 +86,9 @@ class BirdsPreprocessor(DataPreprocessor):
         self.test = self.splitted_data["test"]
         self.val = self.splitted_data["val"]
 
+    def get_test_split_imgs(self):
+        return self.test
+
     def preprocess(self):
         """
         create vocabulary, tokenize captions with len>0
