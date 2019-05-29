@@ -55,21 +55,6 @@ from .inception import InceptionV3
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
-def remove_one_channel_img(files_list):
-    files = files_list
-
-    idx = 0
-    print ("removing one channel files ...")
-    for img_path in tqdm(files):
-        img = imread(str(img_path)).astype(np.float32)
-        if (len(img.shape) != 3):
-            del files[idx]
-        
-        idx += 1
-
-    return files
-
-
 def get_activations(files, model, batch_size=50, dims=2048,
                     cuda=False, verbose=False):
     """Calculates the activations of the pool_3 layer for all images.
@@ -222,8 +207,6 @@ def calculate_activation_statistics(files, model, batch_size=50,
     return mu, sigma
 
 def _compute_statistics_of_path(path, model, batch_size, dims, cuda):
-    print ("compute statistics")
-
     if (isinstance(path, str)):
 
         if path.endswith('.npz'):
