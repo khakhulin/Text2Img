@@ -19,7 +19,7 @@ def init_config():
     parser.add_argument('--encoder_path', default=None, type=str, help='path to the weights of experiment')
 
     parser.add_argument('--save_path', default='./models_backup/exp1', type=str, help='path to save models')
-    parser.add_argument('--datasets', default='birds', type=str, help='type of the dataset')
+    parser.add_argument('--dataset_type', default='birds', type=str, help='type of the dataset')
     parser.add_argument('--data_path', default='dataset/CUB_200_2011', type=str, help='path to dataset')
     #  Training
     parser.add_argument('--pretrained_text_enc', default='', type=str, help='path to load text encoder weights')
@@ -43,7 +43,7 @@ def init_config():
     parser.add_argument('--embd_size', default=256, type=int, help='size of embedding vectors in gcn')
     parser.add_argument('--text_enc_emb_size', default=128, type=int, help='size of embedding vectors in text encoder')
     parser.add_argument('--encoder_type', default='lstm', type=str, help='type of the text encoder')
-    parser.add_argument('--loss_type', default='ls_gan', type=str, help='type of the text encoder')
+    parser.add_argument('--loss_type', default='ls-gan', type=str, help='type of the text encoder')
     parser.add_argument('--is_bert', default=False, action='store_true')
     parser.add_argument('--use_sagan', default=False, action='store_true', help='use self-attention model')
     parser.add_argument('--base_size', default=64, type=int)

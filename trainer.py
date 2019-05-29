@@ -35,7 +35,10 @@ class Text2ImgTrainer:
         self.writer = SummaryWriter()
         self.batch_size = args.batch_size
         self.args = args #  TODO find better way to use arguments
-        self.dataset = self.build_dataset(args.data_path, args.base_size)
+        self.dataset = self.build_dataset(
+            args.data_path, args.base_size,
+            dataset_type=args.dataset_type
+        )
         self.data_loader = DataLoader(
             dataset=self.dataset,
             batch_size=self.batch_size,

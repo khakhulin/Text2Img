@@ -188,10 +188,13 @@ def generator_loss(netsD, image_encoder,
     # loss
     if args.loss_type == 'ls-gan':
         criterion = nn.MSELoss()
-    elif args.loss_type == 'vanila':
+    elif args.loss_type == 'bce':
         criterion = nn.BCELoss()
     else:
-        criterion = nn.BCELoss()
+        raise ValueError(
+            f"{args.loss_type} loss is not supported\n"
+            "Supported types: ls-gan, bce"
+        )
 
     # Forward
     errG_total = 0
