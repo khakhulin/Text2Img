@@ -53,8 +53,6 @@ class ImageDataset(torch.utils.data.Dataset):
 class GenImgData(torch.utils.data.Dataset):
 	def __init__(self, path_to_imgs):
 		self.path_to_imgs = path_to_imgs
-		print ("path to imgs: ", path_to_imgs)
-
 		self.img_path_list = []
 
 		for img in os.listdir(self.path_to_imgs):
@@ -132,8 +130,6 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Process some integers.')
 	parser.add_argument('--dataset_path', default='', type=str)
 	args = parser.parse_args()
-
-	print ("args.dataset_path: ", args.dataset_path)
 
 	#img_dataset = ImageDataset(args.dataset_path)
 	img_dataset = GenImgData(args.dataset_path)

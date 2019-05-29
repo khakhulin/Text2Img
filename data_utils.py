@@ -86,7 +86,7 @@ class BirdsPreprocessor(DataPreprocessor):
         self.test = self.splitted_data["test"]
         self.val = self.splitted_data["val"]
 
-    def get_test_split_imgs(self):
+    def get_test_split_imgs_paths(self):
         test_img_list = [os.path.join(self.data_dir, "images", path) for path in self.test]
         return test_img_list
 
@@ -483,6 +483,9 @@ class CocoDataset(Dataset):
 
     def __len__(self):
         return len(self.raw_dataset)
+
+    def get_test_split_imgs_paths(self):
+        return os.path.join(self.preprocessor.data_dir, 'images', 'test2017')
 
     def __getitem__(self, idx):
         """
