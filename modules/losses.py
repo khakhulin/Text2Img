@@ -152,7 +152,7 @@ def discriminator_loss(netD, real_imgs, fake_imgs, conditions,
     if loss_type == 'ls-gan':
         criterion = nn.MSELoss()
     elif loss_type == 'bce':
-        criterion = nn.BCELoss()
+        criterion = nn.BCEWithLogitsLoss()
     else:
         raise ValueError(
             f"{loss_type} loss is not supported\n"
@@ -192,7 +192,7 @@ def generator_loss(netsD, image_encoder,
     if args.loss_type == 'ls-gan':
         criterion = nn.MSELoss()
     elif args.loss_type == 'bce':
-        criterion = nn.BCELoss()
+        criterion = nn.BCEWithLogitsLoss()
     else:
         raise ValueError(
             f"{args.loss_type} loss is not supported\n"

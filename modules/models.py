@@ -46,7 +46,7 @@ class Discriminator(nn.Module):
                 kernel_size=self.base_size // 16,
                 stride=self.base_size // 16
             ),
-            nn.Sigmoid()
+            #nn.Sigmoid()
         )
 
     def forward(self, h_code, c_code=None):
@@ -167,7 +167,10 @@ class AttentionGenerator(nn.Module):
         self.encoder_dim = nef
         self.cf_dim = cond_dim
         self.num_residual = num_res_block
-        layers = [ResBlock(ngf * 2, is_spectral=use_sagan) for _ in range(self.num_residual)]
+        layers = [
+            ResBlock(ngf * 2, is_spectral=use_sagan)
+            for _ in range(self.num_residual)
+        ]
         self.res_net = nn.Sequential(*layers)
         self.use_sagan = use_sagan
         if self.use_sagan:
@@ -189,22 +192,33 @@ class AttentionGenerator(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, ngf, emb_dim, ncf, branch_num, device, z_dim, base_size, num_res_block=2, is_sagan=False):
+    def __init__(self, ngf, emb_dim, ncf, branch_num, device,
+                 z_dim, base_size, num_res_block=2, is_sagan=False):
         super(Generator, self).__init__()
         self.ca_net = ConditionNoise(emb_dim, ncf, device)
         self.branch_num = branch_num
         if branch_num > 0:
-            self.h_net1 = UpGenMode(ngf=ngf * 16, z_dim=z_dim, ncf=ncf, is_sagan=is_sagan, base_size=base_size)
+            self.h_net1 = UpGenMode(
+                ngf=ngf * 16, z_dim=z_dim, ncf=ncf,
+                is_sagan=is_sagan, base_size=base_size
+            )
             self.img_net1 = ImageGenMod(ngf, is_spectral=is_sagan)
         if branch_num > 1:
             if is_sagan:
-                self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
+                self.h_net2 = AttentionGenerator(
+                    ngf=ngf, nef=emb_dim, cond_dim=ncf,
+                    num_res_block=num_res_block
+                )
             else:
-                self.h_net2 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf,
-                                                 num_res_block=num_res_block, use_sagan=is_sagan)
+                self.h_net2 = AttentionGenerator(
+                    ngf=ngf, nef=emb_dim, cond_dim=ncf,
+                    num_res_block=num_res_block, use_sagan=is_sagan
+                )
             self.img_net2 = ImageGenMod(ngf=ngf, is_spectral=is_sagan)
         if branch_num > 2:
-            self.h_net3 = AttentionGenerator(ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block)
+            self.h_net3 = AttentionGenerator(
+                ngf=ngf, nef=emb_dim, cond_dim=ncf, num_res_block=num_res_block
+            )
             self.img_net3 = ImageGenMod(ngf=ngf, is_spectral=is_sagan)
 
     def forward(self, z_code, sent_emb, word_embs, mask):
