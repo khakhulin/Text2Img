@@ -151,10 +151,13 @@ def discriminator_loss(netD, real_imgs, fake_imgs, conditions,
     # loss
     if loss_type == 'ls-gan':
         criterion = nn.MSELoss()
-    elif loss_type == 'vanila':
+    elif loss_type == 'bce':
         criterion = nn.BCELoss()
     else:
-        criterion = nn.BCELoss()
+        raise ValueError(
+            f"{args.loss_type} loss is not supported\n"
+            "Supported types: ls-gan, bce"
+        )
 
     cond_real_logits = netD.cond_discriminator(real_features, conditions)
     cond_real_err = criterion(cond_real_logits, real_labels)
