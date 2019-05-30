@@ -210,8 +210,8 @@ class Text2ImgTrainer:
                     self.model.discriminators[i].zero_grad()
                     d_loss = discriminator_loss(
                         self.model.discriminators[i],
-                        images[i] + torch.randn_like(images[i]),
-                        fake_images[i] + torch.randn_like(images[i]),
+                        images[i] + torch.randn_like(images[i]) * args.discriminator_noise_std,
+                        fake_images[i] + torch.randn_like(images[i]) * args.discriminator_noise_std,
                         sentence_embedding,
                         real_labels,
                         fake_labels,

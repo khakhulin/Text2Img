@@ -40,6 +40,7 @@ def init_config():
     parser.add_argument('--beta2', default=0.999, type=float, help='learning rate for discriminator')
     parser.add_argument('--smooth_lambda', default=0.3, type=float, help='smooth constant for ranking loss')
     parser.add_argument('--inception_score_on_validation', default=False, type=bool, help='measure inception score on validation')
+    parser.add_argument('--discriminator_noise_std', default=0, type=int)
 
     #  Model
     parser.add_argument('--embd_size', default=256, type=int, help='size of embedding vectors in gcn')
