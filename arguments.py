@@ -22,6 +22,8 @@ def init_config():
     parser.add_argument('--dataset_type', default='birds', type=str, help='type of the dataset')
     parser.add_argument('--data_path', default='dataset/CUB_200_2011', type=str, help='path to dataset')
     #  Training
+    parser.add_argument('--use_average_weights', default=False, action='store_true', help='')
+    parser.add_argument('--average_weights', default='', type=str, help='path to average generator weights')
     parser.add_argument('--pretrained_text_enc', default='', type=str, help='path to load text encoder weights')
     parser.add_argument('--pretrained_image_enc', default='', type=str, help='path to load image encoder weights')
     parser.add_argument('--pretrained_generator', default='', type=str, help='path to load generator weights')
@@ -63,5 +65,3 @@ def init_config():
     args = parser.parse_args()
 
     return args
-
-args = init_config()

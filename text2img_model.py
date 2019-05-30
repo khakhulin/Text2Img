@@ -168,6 +168,106 @@ class Text2ImgModel(nn.Module):
         return weights['epoch']
 
 
+class Text2ImgEvalModel(nn.Module):
+    def __init__(
+            self,
+            embedding_dim,
+            n_tokens,
+            text_encoder_embd_size,
+            branch_num,
+            num_generator_filters,
+            z_dim,
+            condition_dim,
+            is_bert_encoder,
+            use_sagan,
+            base_size,
+            device,
+            pretrained_ckpt=None,
+            pretrained_text_encoder_path=None,
+            pretrained_generator_path=None
+    ):
+        super(Text2ImgEvalModel, self).__init__()
+
+        self.z_dim = z_dim
+        self.is_bert_encoder = is_bert_encoder
+
+        if self.is_bert_encoder:
+            self.text_encoder = BertEncoder(emb_size=embedding_dim).to(device)
+        else:
+            self.text_encoder = TextEncoder(
+                n_tokens=n_tokens, text_feat_size=embedding_dim,
+                emb_size=text_encoder_embd_size
+            ).to(device)
+
+        self.generator = Generator(
+            ngf=num_generator_filters,
+            emb_dim=embedding_dim,
+            ncf=condition_dim,
+            branch_num=branch_num,
+            device=device,
+            z_dim=z_dim,
+            is_sagan=use_sagan,
+            base_size=base_size,
+        ).to(device)
+
+        self.load_model(
+            pretrained_ckpt,
+            pretrained_text_encoder_path,
+            pretrained_generator_path
+        )
+
+    def forward(self, captions, cap_lens, noise, masks):
+        if not self.is_bert_encoder:
+            words_embeddings, sentence_embedding = \
+                self.text_encoder(captions, cap_lens)
+        else:
+            words_embeddings, sentence_embedding = \
+                self.text_encoder(captions, cap_lens, masks)
+
+        mask = (captions == 0)
+        num_words = words_embeddings.size(2)
+
+        if mask.size(1) > num_words:
+            mask = mask[:, :num_words]
+
+        fake_images, attention_maps, mu, logvar = self.generator(
+            noise,
+            sentence_embedding,
+            words_embeddings,
+            mask
+        )
+
+        return fake_images, mu, logvar, sentence_embedding, words_embeddings
+    
+    def load_model(self, ckpt, text_enc, gen):
+        if ckpt is None and text_enc is None and gen is None:
+            raise FileNotFoundError("Set path to load the model")
+        
+        if ckpt is not None and (text_enc is not None or gen is not None):
+            raise ValueError(
+                "Specify just one way for loading:"
+                "checkpoint path or two separate files"
+                "for text encoder and generator"
+            )
+        
+        if ckpt is not None:
+            print('Loading from checkpoint')
+            weights = torch.load(ckpt)
+            self.text_encoder.load_state_dict(weights['txt_enc'])
+            self.generator.load_state_dict(weights['generator'])
+        elif gen is not None and text_enc is not None:
+            print('Loading from separate files')
+            self.text_encoder.load_state_dict(torch.load(text_enc))
+            self.generator.load_state_dict(torch.load(gen))
+        elif gen is None or text_enc is None:
+            raise FileNotFoundError(
+                "Specify both generator and text encoder files"
+            )
+        
+        self.eval()
+        freeze_model(self)
+
+
 if __name__ == '__main__':
     DEV = torch.device('cpu')
     model = Text2ImgModel(

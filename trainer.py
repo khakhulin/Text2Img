@@ -52,6 +52,8 @@ class Text2ImgTrainer:
         self.path_to_data = args.data_path
         self.is_bert = self.args.is_bert
         self.use_sagan = self.args.use_sagan
+        self.avg_snapshot_generator = None
+
         self.model = self.build_model(
             embedding_dim=args.embd_size,
             n_tokens=self.dataset.n_tokens,
@@ -71,8 +73,21 @@ class Text2ImgTrainer:
         )
         
         self.start = 0
+
+        # Load average weights from the specified location
+        if args.use_average_weights:
+            if args.average_weights:
+                print('Load average state of generator')
+                back_up = copy_params(self.model.generator)
+                self.model.generator.load_state_dict(
+                    torch.load(args.average_weights)
+                )
+                self.avg_snapshot_generator = copy_params(self.model.generator)
+                load_params(self.model.generator, back_up)
+
         if args.continue_from and os.path.exists(args.continue_from):
             print('Start from checkpoint')
+            # Load model checkpoint
             self.start = self.model.load_model_ckpt(args.continue_from)
 
         self.generator_optimizer, self.discriminator_optimizers = \
@@ -81,8 +96,10 @@ class Text2ImgTrainer:
                 generator_lr=args.generator_lr,
                 discriminator_lr=args.discriminator_lr
             )
-
-        self.avg_snapshot_generator = copy_params(self.model.generator)
+        # Accumulate from the current generator state if no path given
+        if args.use_average_weights:
+            if self.avg_snapshot_generator is None:
+                self.avg_snapshot_generator = copy_params(self.model.generator)
 
     @staticmethod
     def build_model(**kwargs):
@@ -170,7 +187,8 @@ class Text2ImgTrainer:
             for data in tqdm.tqdm(self.data_loader, total=len(self.data_loader)):
                 set_requires_grad_value(self.model.discriminators, True)
 
-                images, captions, cap_lens, masks, class_ids = prepare_data(data, self.device)
+                images, captions, cap_lens, masks, class_ids = \
+                    prepare_data(data, self.device)
 
                 # batch size can be smaller in the end of the epoch
                 noise = torch.FloatTensor(
@@ -233,8 +251,10 @@ class Text2ImgTrainer:
                 errG_total.backward()
                 self.generator_optimizer.step()
                 #  Update average parameters of the generator
-                # for p, avg_p in zip(self.model.generator.parameters(), self.avg_snapshot_generator):
-                #    avg_p.mul_(0.999).add_(0.001, p.data)
+                if self.args.use_average_weights:
+                    for p, avg_p in zip(self.model.generator.parameters(),
+                                        self.avg_snapshot_generator):
+                        avg_p.mul_(0.999).add_(0.001, p.data)
 
                 # Track generator gradients
                 top, bottom = get_top_bottom_mean_grad(
@@ -249,7 +269,8 @@ class Text2ImgTrainer:
                         self.model.discriminators[i].parameters()
                     )
                     self.writer.add_scalars(
-                        'grad/D%d'%(i), {'top': top, 'bottom': bottom}, gen_iterations
+                        'grad/D%d'%(i),
+                        {'top': top, 'bottom': bottom}, gen_iterations
                     )
 
                 if gen_iterations % args.log_every == 0:
@@ -295,23 +316,28 @@ class Text2ImgTrainer:
                     #  TODO validation and test part with metric by option
                     ## EVAL
                     self.model.generator.eval()
-                    # backup_params = copy_params(self.model.generator)
-                    # load_params(self.model.generator, self.avg_snapshot_generator)
+
+                    if self.args.use_average_weights:
+                        backup_params = copy_params(self.model.generator)
+                        load_params(self.model.generator, self.avg_snapshot_generator)
 
                     val_noise = torch.FloatTensor(
                         val_cap.size(0),
                         self.model.z_dim
                     ).to(self.device).normal_(0, 1)
 
-                    gen_imgs_stack, _, _, _, _ = \
-                        self.model(
-                            val_cap,
-                            val_cap_len,
-                            val_noise,
-                            val_mask
-                        )
+                    with torch.no_grad():
+                        gen_imgs_stack, _, _, _, _ = \
+                            self.model(
+                                val_cap,
+                                val_cap_len,
+                                val_noise,
+                                val_mask
+                            )
                     
-                    # load_params(self.model.generator, backup_params)
+                    if self.args.use_average_weights:
+                        load_params(self.model.generator, backup_params)
+
                     for i, gen_imgs in enumerate(gen_imgs_stack):
                         size = 64*(2**i)
                         img_tensor = save_images(gen_imgs, None, log_dir, gen_iterations, size)
@@ -335,6 +361,16 @@ class Text2ImgTrainer:
                         gen_iterations,
                         os.path.join(save_dir, 'weights%05d.pt' % (gen_iterations))
                     )
+                    if self.args.use_average_weights:
+                        backup_params = copy_params(self.model.generator)
+                        load_params(self.model.generator, self.avg_snapshot_generator)
+
+                        torch.save(
+                            self.model.generator.state_dict(),
+                            os.path.join(save_dir, 'avg_weights%05d.pt' % (gen_iterations))
+                        )
+
+                        load_params(self.model.generator, backup_params)
 
             if (args.inception_score_on_validation):
                 gen_save_folder = os.path.join(log_dir, 'images', 'iter'+str(gen_iterations), str(256))
