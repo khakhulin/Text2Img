@@ -185,7 +185,7 @@ class Text2ImgTrainer:
             # step = 0
 
             for data in tqdm.tqdm(self.data_loader, total=len(self.data_loader)):
-                set_requires_grad_value(self.model.discriminators, True)
+                # set_requires_grad_value(self.model.discriminators, True)
 
                 images, captions, cap_lens, masks, class_ids = \
                     prepare_data(data, self.device)
@@ -227,7 +227,7 @@ class Text2ImgTrainer:
                 # step += 1
                 gen_iterations += 1
 
-                set_requires_grad_value(self.model.discriminators, False)
+                # set_requires_grad_value(self.model.discriminators, False)
                 self.generator_optimizer.zero_grad()
                 errG_total, g_losses, w_loss, s_loss = \
                     generator_loss(
