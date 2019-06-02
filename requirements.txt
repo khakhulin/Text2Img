@@ -11,3 +11,4 @@ tqdm==4.31.1
 Pillow==6.0.0
 scikit_learn==0.21.2
 tensorboardX==1.7
+pycocotools

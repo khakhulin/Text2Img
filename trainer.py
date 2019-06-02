@@ -237,7 +237,6 @@ class Text2ImgTrainer:
                         words_embeddings, sentence_embedding,
                         cap_lens, self.args, class_ids=class_ids
                     )
-
                 assert len(G_losses) == len(g_losses), 'generator loss error'
                 for i in range(len(G_losses)):
                     G_losses[i] += g_losses[i]

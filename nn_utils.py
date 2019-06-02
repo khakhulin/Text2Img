@@ -16,7 +16,7 @@ def conv3x3(in_planes, out_planes, is_spectral=False):
         return SpectralNorm(nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=1,
                          padding=1, bias=True))
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=1,
-                     padding=1, bias=True)
+                     padding=1, bias=False)
 
 
 class Downsample16(nn.Sequential):

@@ -212,13 +212,9 @@ def generator_loss(netsD, image_encoder,
         else:
             g_loss = cond_errG
         errG_total += g_loss
-        # err_img = errG_total.data[0]
         g_losses.append(g_loss.item())
-
         # Ranking loss
         if i == (numDs - 1):
-            # words_features: batch_size x nef x 17 x 17
-            # sent_code: batch_size x nef
             region_features, cnn_code = image_encoder(fake_images[i])
             
             w_loss0, w_loss1, _ = words_loss(
@@ -237,8 +233,8 @@ def generator_loss(netsD, image_encoder,
 
 
 ##################################################################
+# -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
 def KL_loss(mu, logvar):
-    # -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-    KLD_element = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
-    KLD = torch.mean(KLD_element).mul_(-0.5)
-    return KLD
+    kl = mu.pow(2).add_(logvar.exp()).mul_(-1).add_(1).add_(logvar)
+    kl = torch.mean(kl).mul_(-0.5)
+    return kl
